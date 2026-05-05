@@ -14,8 +14,8 @@ export class Window {
   constructor() {
     // Create the browser window.
     this._baseWindow = new BaseWindow({
-      width: 1000,
-      height: 800,
+      width: 1500,
+      height: 900,
       show: true,
       autoHideMenuBar: false,
       titleBarStyle: "hidden",

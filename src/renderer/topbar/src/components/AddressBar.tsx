@@ -71,9 +71,28 @@ export const AddressBar: React.FC = () => {
     const canGoBack = activeTab !== null
     const canGoForward = activeTab !== null
 
+    const isHomeTabUrl = (rawUrl: string): boolean => {
+        try {
+            if (rawUrl.startsWith('file:')) {
+                return /home[\/\\]index\.html/i.test(rawUrl)
+            }
+            const u = new URL(rawUrl)
+            const p = u.pathname.replace(/\/+$/, '') || '/'
+            if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+                return p === '/home'
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    const isHomeTab = !!activeTab?.url && isHomeTabUrl(activeTab.url)
+
     // Extract domain and title for display
     const getDomain = () => {
         if (!activeTab?.url) return ''
+        if (isHomeTab) return 'Home'
         try {
             const urlObj = new URL(activeTab.url)
             return urlObj.hostname.replace('www.', '')
@@ -183,12 +202,16 @@ export const AddressBar: React.FC = () => {
                             {activeTab ? (
                                 <>
                                     <span className="text-foreground dark:text-foreground">{getDomain()}</span>
-                                    <span className="group-hover/address-bar:hidden text-muted-foreground/60">
-                                        {activeTab.title && ` / ${activeTab.title}`}
-                                    </span>
-                                    <span className="group-hover/address-bar:inline hidden text-muted-foreground/60">
-                                        {getPath()}
-                                    </span>
+                                    {!isHomeTab && (
+                                        <>
+                                            <span className="group-hover/address-bar:hidden text-muted-foreground/60">
+                                                {activeTab.title && ` / ${activeTab.title}`}
+                                            </span>
+                                            <span className="group-hover/address-bar:inline hidden text-muted-foreground/60">
+                                                {getPath()}
+                                            </span>
+                                        </>
+                                    )}
                                 </>
                             ) : (
                                 <span className="text-muted-foreground">No active tab</span>

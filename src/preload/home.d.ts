@@ -2,6 +2,10 @@ import { ElectronAPI } from "@electron-toolkit/preload";
 
 interface HomeAPI {
   navigateFromSearch: (url: string) => Promise<boolean>;
+  openSidebarWithChat: (request: {
+    message: string;
+    messageId: string;
+  }) => Promise<boolean>;
   toggleSidebar: () => Promise<boolean>;
 }
 

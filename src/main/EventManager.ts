@@ -171,6 +171,31 @@ export class EventManager {
       return true;
     });
 
+    // Home (Agent pill): show sidebar and send the same text as a sidebar chat message
+    ipcMain.handle(
+      "home-open-sidebar-with-chat",
+      async (
+        event,
+        request: { message: string; messageId: string }
+      ) => {
+        if (!isHomePageUrl(event.sender.getURL())) return false;
+        const text = request?.message?.trim() ?? "";
+        if (!text) return false;
+
+        if (!this.mainWindow.sidebar.getIsVisible()) {
+          this.mainWindow.sidebar.show();
+          this.mainWindow.updateAllBounds();
+        }
+
+        this.mainWindow.sidebar.view.webContents.focus();
+        await this.mainWindow.sidebar.client.sendChatMessage({
+          message: text,
+          messageId: request.messageId,
+        });
+        return true;
+      }
+    );
+
     // Chat message
     ipcMain.handle("sidebar-chat-message", async (_, request) => {
       await this.mainWindow.sidebar.client.sendChatMessage(request);
