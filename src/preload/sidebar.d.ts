@@ -23,6 +23,24 @@ interface TabInfo {
   isActive: boolean;
 }
 
+type AgentScreenshotResult =
+  | { ok: true; dataUrl: string; url: string; title: string }
+  | { ok: false; error: string };
+
+type AgentStepAction =
+  | { action: "navigate"; url: string }
+  | { action: "click_xy"; x: number; y: number }
+  | { action: "type"; text: string }
+  | { action: "scroll"; deltaY: number }
+  | { action: "wait"; ms: number }
+  | { action: "done"; summary: string };
+
+type AgentEventPayload =
+  | { type: "log"; message: string }
+  | { type: "step"; step: number; action: AgentStepAction }
+  | { type: "error"; message: string }
+  | { type: "finished"; reason: string };
+
 interface SidebarAPI {
   sendChatMessage: (
     request: ChatRequest | Pick<ChatRequest, "message" | "messageId">
@@ -42,6 +60,18 @@ interface SidebarAPI {
   getCurrentUrl: () => Promise<string | null>;
 
   getActiveTabInfo: () => Promise<TabInfo | null>;
+
+  captureAgentActiveTabScreenshot: () => Promise<AgentScreenshotResult>;
+
+  agentStart: (
+    goal: string,
+    maxSteps?: number
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+
+  agentStop: () => Promise<boolean>;
+
+  onAgentEvent: (callback: (event: AgentEventPayload) => void) => void;
+  removeAgentEventListener: () => void;
 }
 
 declare global {

@@ -1,10 +1,15 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { ChatProvider } from './contexts/ChatContext'
 import { Chat } from './components/Chat'
+import { AgentPanel } from './components/AgentPanel'
 import { useDarkMode } from '@common/hooks/useDarkMode'
+import { cn } from '@common/lib/utils'
+
+type SidebarRail = 'chat' | 'agent'
 
 const SidebarContent: React.FC = () => {
     const { isDarkMode } = useDarkMode()
+    const [rail, setRail] = useState<SidebarRail>('chat')
 
     // Apply dark mode class to the document
     useEffect(() => {
@@ -17,7 +22,42 @@ const SidebarContent: React.FC = () => {
 
     return (
         <div className="h-screen flex flex-col bg-background border-l border-border">
-            <Chat />
+            <div className="flex shrink-0 gap-1 p-2 border-b border-border">
+                <button
+                    type="button"
+                    onClick={() => setRail('chat')}
+                    className={cn(
+                        'flex-1 rounded-md py-1.5 text-xs font-medium transition-colors',
+                        rail === 'chat'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:bg-muted'
+                    )}
+                >
+                    Chat
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setRail('agent')}
+                    className={cn(
+                        'flex-1 rounded-md py-1.5 text-xs font-medium transition-colors',
+                        rail === 'agent'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:bg-muted'
+                    )}
+                >
+                    Agent
+                </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                {rail === 'chat' ? (
+                    <Chat />
+                ) : (
+                    <div className="flex-1 min-h-0 overflow-y-auto">
+                        <AgentPanel />
+                    </div>
+                )}
+            </div>
         </div>
     )
 }

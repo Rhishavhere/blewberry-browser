@@ -1,9 +1,11 @@
 import { ipcMain, WebContents } from "electron";
 import type { Window } from "./Window";
 import { isHomePageUrl } from "./homePage";
+import { AgentRunner } from "./AgentRunner";
 
 export class EventManager {
   private mainWindow: Window;
+  private agentRunner = new AgentRunner();
 
   constructor(mainWindow: Window) {
     this.mainWindow = mainWindow;
@@ -210,6 +212,56 @@ export class EventManager {
     // Get messages
     ipcMain.handle("sidebar-get-messages", () => {
       return this.mainWindow.sidebar.client.getMessages();
+    });
+
+    // Agent v1: screenshot of the active tab only (path to vision / see tool next)
+    ipcMain.handle("agent-capture-active-tab", async () => {
+      const tab = this.mainWindow.activeTab;
+      if (!tab) {
+        return { ok: false as const, error: "no_active_tab" };
+      }
+      try {
+        const image = await tab.screenshot();
+        return {
+          ok: true as const,
+          dataUrl: image.toDataURL(),
+          url: tab.url,
+          title: tab.title,
+        };
+      } catch (e) {
+        return { ok: false as const, error: String(e) };
+      }
+    });
+
+    ipcMain.handle(
+      "agent-start",
+      async (
+        _,
+        payload: { goal: string; maxSteps?: number }
+      ): Promise<{ ok: true } | { ok: false; error: string }> => {
+        const goal = typeof payload?.goal === "string" ? payload.goal.trim() : "";
+        if (!goal) return { ok: false, error: "empty_goal" };
+
+        this.agentRunner.stop();
+        const sidebarWc = this.mainWindow.sidebar.view.webContents;
+
+        void this.agentRunner.run({
+          goal,
+          maxSteps:
+            typeof payload?.maxSteps === "number" && payload.maxSteps > 0
+              ? Math.min(payload.maxSteps, 60)
+              : 25,
+          getActiveTab: () => this.mainWindow.activeTab,
+          emit: (event) => sidebarWc.send("agent-event", event),
+        });
+
+        return { ok: true };
+      }
+    );
+
+    ipcMain.handle("agent-stop", () => {
+      this.agentRunner.stop();
+      return true;
     });
   }
 

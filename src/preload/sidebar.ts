@@ -17,6 +17,24 @@ interface ChatResponse {
   isComplete: boolean;
 }
 
+type AgentStepAction =
+  | { action: "navigate"; url: string }
+  | { action: "click_xy"; x: number; y: number }
+  | { action: "type"; text: string }
+  | { action: "scroll"; deltaY: number }
+  | { action: "wait"; ms: number }
+  | { action: "done"; summary: string };
+
+type AgentEventPayload =
+  | { type: "log"; message: string }
+  | {
+      type: "step";
+      step: number;
+      action: AgentStepAction;
+    }
+  | { type: "error"; message: string }
+  | { type: "finished"; reason: string };
+
 // Sidebar specific APIs
 const sidebarAPI = {
   // Chat functionality
@@ -52,6 +70,23 @@ const sidebarAPI = {
 
   // Tab information
   getActiveTabInfo: () => electronAPI.ipcRenderer.invoke("get-active-tab-info"),
+
+  // Agent (v1): screenshot probe
+  captureAgentActiveTabScreenshot: () =>
+    electronAPI.ipcRenderer.invoke("agent-capture-active-tab"),
+
+  agentStart: (goal: string, maxSteps?: number) =>
+    electronAPI.ipcRenderer.invoke("agent-start", { goal, maxSteps }),
+
+  agentStop: () => electronAPI.ipcRenderer.invoke("agent-stop"),
+
+  onAgentEvent: (callback: (data: AgentEventPayload) => void) => {
+    electronAPI.ipcRenderer.on("agent-event", (_, data) => callback(data));
+  },
+
+  removeAgentEventListener: () => {
+    electronAPI.ipcRenderer.removeAllListeners("agent-event");
+  },
 };
 
 // Use `contextBridge` APIs to expose Electron APIs to

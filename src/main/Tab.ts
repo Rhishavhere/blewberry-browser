@@ -121,6 +121,28 @@ export class Tab {
     this.webContentsView.webContents.reload();
   }
 
+  /** Left-click at CSS viewport coordinates using real input events (not DOM-only). */
+  clickAtCss(x: number, y: number): void {
+    const wc = this.webContentsView.webContents;
+    wc.focus();
+    const ix = Math.round(x);
+    const iy = Math.round(y);
+    wc.sendInputEvent({
+      type: "mouseDown",
+      x: ix,
+      y: iy,
+      button: "left",
+      clickCount: 1,
+    });
+    wc.sendInputEvent({
+      type: "mouseUp",
+      x: ix,
+      y: iy,
+      button: "left",
+      clickCount: 1,
+    });
+  }
+
   stop(): void {
     this.webContentsView.webContents.stop();
   }
