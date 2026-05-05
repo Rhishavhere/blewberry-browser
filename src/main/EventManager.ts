@@ -1,5 +1,6 @@
 import { ipcMain, WebContents } from "electron";
 import type { Window } from "./Window";
+import { isHomePageUrl } from "./homePage";
 
 export class EventManager {
   private mainWindow: Window;
@@ -133,6 +134,19 @@ export class EventManager {
       return null;
     });
 
+    ipcMain.handle("home-navigate", async (event, url: string) => {
+      if (!isHomePageUrl(event.sender.getURL())) return false;
+      const target = typeof url === "string" ? url.trim() : "";
+      if (!target || /^\s*javascript:/i.test(target)) return false;
+      for (const tab of this.mainWindow.allTabs) {
+        if (tab.webContents === event.sender) {
+          await tab.loadURL(url);
+          return true;
+        }
+      }
+      return false;
+    });
+
     // Tab info
     ipcMain.handle("get-active-tab-info", () => {
       const activeTab = this.mainWindow.activeTab;
@@ -159,7 +173,6 @@ export class EventManager {
 
     // Chat message
     ipcMain.handle("sidebar-chat-message", async (_, request) => {
-      // The LLMClient now handles getting the screenshot and context directly
       await this.mainWindow.sidebar.client.sendChatMessage(request);
     });
 

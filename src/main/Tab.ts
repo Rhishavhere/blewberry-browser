@@ -1,4 +1,6 @@
 import { NativeImage, WebContentsView } from "electron";
+import { join } from "path";
+import { getHomePageUrl } from "./homePage";
 
 export class Tab {
   private webContentsView: WebContentsView;
@@ -7,7 +9,7 @@ export class Tab {
   private _url: string;
   private _isVisible: boolean = false;
 
-  constructor(id: string, url: string = "https://www.google.com") {
+  constructor(id: string, url: string = getHomePageUrl()) {
     this._id = id;
     this._url = url;
     this._title = "New Tab";
@@ -15,9 +17,10 @@ export class Tab {
     // Create the WebContentsView for web content only
     this.webContentsView = new WebContentsView({
       webPreferences: {
+        preload: join(__dirname, "../preload/home.js"),
         nodeIntegration: false,
         contextIsolation: true,
-        sandbox: true,
+        sandbox: false,
         webSecurity: true,
       },
     });

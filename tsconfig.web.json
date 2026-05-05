@@ -8,6 +8,8 @@
     "src/renderer/common/**/*.tsx",
     "src/renderer/sidebar/**/*",
     "src/renderer/sidebar/**/*.tsx",
+    "src/renderer/home/**/*",
+    "src/renderer/home/**/*.tsx",
     "src/renderer/topbar/**/*",
     "src/renderer/topbar/**/*.tsx",
     "src/preload/*.d.ts"

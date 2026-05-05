@@ -13,6 +13,7 @@ export default defineConfig({
         input: {
           topbar: resolve(__dirname, "src/preload/topbar.ts"),
           sidebar: resolve(__dirname, "src/preload/sidebar.ts"),
+          home: resolve(__dirname, "src/preload/home.ts"),
         },
       },
     },
@@ -24,6 +25,7 @@ export default defineConfig({
         input: {
           topbar: resolve(__dirname, "src/renderer/topbar/index.html"),
           sidebar: resolve(__dirname, "src/renderer/sidebar/index.html"),
+          home: resolve(__dirname, "src/renderer/home/index.html"),
         },
       },
     },

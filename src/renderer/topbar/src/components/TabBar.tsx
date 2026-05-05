@@ -1,8 +1,7 @@
 import React from 'react'
-import { Plus, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useBrowser } from '../contexts/BrowserContext'
 import { Favicon } from '../components/Favicon'
-import { TabBarButton } from '../components/TabBarButton'
 import { cn } from '@common/lib/utils'
 
 interface TabItemProps {
@@ -74,11 +73,7 @@ const TabItem: React.FC<TabItemProps> = ({
 }
 
 export const TabBar: React.FC = () => {
-    const { tabs, createTab, closeTab, switchTab, isLoading } = useBrowser()
-
-    const handleCreateTab = () => {
-        createTab('https://www.google.com')
-    }
+    const { tabs, closeTab, switchTab } = useBrowser()
 
     // Extract favicon from URL (simplified - you might want to improve this)
     const getFavicon = (url: string) => {
@@ -110,13 +105,6 @@ export const TabBar: React.FC = () => {
                 ))}
             </div>
 
-            {/* Add Tab Button */}
-            <div className="pl-1 pr-2">
-                <TabBarButton
-                    Icon={Plus}
-                    onClick={handleCreateTab}
-                />
-            </div>
         </div>
     )
 }

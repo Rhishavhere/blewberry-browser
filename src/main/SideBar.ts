@@ -7,13 +7,13 @@ export class SideBar {
   private webContentsView: WebContentsView;
   private baseWindow: BaseWindow;
   private llmClient: LLMClient;
-  private isVisible: boolean = true;
+  private isVisible: boolean = false;
 
   constructor(baseWindow: BaseWindow) {
     this.baseWindow = baseWindow;
     this.webContentsView = this.createWebContentsView();
     baseWindow.contentView.addChildView(this.webContentsView);
-    this.setupBounds();
+    this.updateBounds();
 
     // Initialize LLM client
     this.llmClient = new LLMClient(this.webContentsView.webContents);
