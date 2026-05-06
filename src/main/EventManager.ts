@@ -252,6 +252,11 @@ export class EventManager {
               ? Math.min(payload.maxSteps, 60)
               : 25,
           getActiveTab: () => this.mainWindow.activeTab,
+          createTabAndActivate: (url?: string) => {
+            const t = this.mainWindow.createTab(url);
+            this.mainWindow.switchActiveTab(t.id);
+            return t;
+          },
           emit: (event) => sidebarWc.send("agent-event", event),
         });
 

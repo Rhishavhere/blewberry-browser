@@ -28,6 +28,8 @@ type AgentScreenshotResult =
   | { ok: false; error: string };
 
 type AgentStepAction =
+  | { action: "see" }
+  | { action: "new_tab"; url?: string }
   | { action: "navigate"; url: string }
   | { action: "click_xy"; x: number; y: number }
   | { action: "type"; text: string }

@@ -98,8 +98,10 @@ export const AgentPanel: React.FC = () => {
       <div>
         <p className="text-sm font-medium">Agent · vision loop</p>
         <p className="text-xs text-muted-foreground mt-1">
-          Each step: screenshot → model picks one action. Clicks use real mouse events at mapped
-          viewport coordinates (<code className="text-[0.7rem]">webContents.sendInputEvent</code>).
+          Each step after the first screenshot: capture → model chooses one action. First planner call is
+          text-only (optional <code className="text-[0.7rem]">see</code>, <code className="text-[0.7rem]">new_tab</code>,{' '}
+          <code className="text-[0.7rem]">navigate</code>). Clicks use{' '}
+          <code className="text-[0.7rem]">webContents.sendInputEvent</code>.
         </p>
       </div>
 
