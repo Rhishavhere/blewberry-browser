@@ -38,6 +38,11 @@ type AgentEventPayload =
   | { type: "error"; message: string }
   | { type: "finished"; reason: string };
 
+type HomeAgentRunPayload = {
+  goal: string;
+  messageId: string;
+};
+
 // Sidebar specific APIs
 const sidebarAPI = {
   // Chat functionality
@@ -89,6 +94,14 @@ const sidebarAPI = {
 
   removeAgentEventListener: () => {
     electronAPI.ipcRenderer.removeAllListeners("agent-event");
+  },
+
+  onHomeAgentRun: (callback: (data: HomeAgentRunPayload) => void) => {
+    electronAPI.ipcRenderer.on("home-agent-run", (_, data) => callback(data));
+  },
+
+  removeHomeAgentRunListener: () => {
+    electronAPI.ipcRenderer.removeAllListeners("home-agent-run");
   },
 };
 

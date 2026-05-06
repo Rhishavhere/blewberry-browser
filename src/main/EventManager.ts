@@ -173,9 +173,9 @@ export class EventManager {
       return true;
     });
 
-    // Home (Agent pill): show sidebar and send the same text as a sidebar chat message
+    // Home (Agent pill): show sidebar and open Agent panel with goal
     ipcMain.handle(
-      "home-open-sidebar-with-chat",
+      "home-open-sidebar-with-agent",
       async (
         event,
         request: { message: string; messageId: string }
@@ -190,8 +190,8 @@ export class EventManager {
         }
 
         this.mainWindow.sidebar.view.webContents.focus();
-        await this.mainWindow.sidebar.client.sendChatMessage({
-          message: text,
+        this.mainWindow.sidebar.view.webContents.send("home-agent-run", {
+          goal: text,
           messageId: request.messageId,
         });
         return true;

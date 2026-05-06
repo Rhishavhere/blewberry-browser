@@ -10,6 +10,12 @@ type AgentEventPayload =
   | { type: 'finished'; reason: string }
 
 type StepRow = { step: number; label: string; raw: string }
+type AgentPanelProps = {
+  externalRunRequest?: {
+    id: string
+    goal: string
+  } | null
+}
 
 function formatActionLabel(action: Record<string, unknown>): string {
   const a = action.action
@@ -46,12 +52,9 @@ function formatActionLabel(action: Record<string, unknown>): string {
   }
 }
 
-export const AgentPanel: React.FC = () => {
+export const AgentPanel: React.FC<AgentPanelProps> = ({ externalRunRequest }) => {
   const [goal, setGoal] = useState('')
   const [running, setRunning] = useState(false)
-  const [busyShot, setBusyShot] = useState(false)
-  const [preview, setPreview] = useState<string | null>(null)
-  const [note, setNote] = useState('')
   const [conclusion, setConclusion] = useState<string | null>(null)
   const [steps, setSteps] = useState<StepRow[]>([])
   const [technicalLog, setTechnicalLog] = useState<string[]>([])
@@ -87,25 +90,6 @@ export const AgentPanel: React.FC = () => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [technicalLog])
 
-  const capture = async () => {
-    setBusyShot(true)
-    setPreview(null)
-    setNote('')
-    try {
-      const res = await window.sidebarAPI.captureAgentActiveTabScreenshot()
-      if (res.ok) {
-        setPreview(res.dataUrl)
-        setNote(`${res.title}\n${res.url}`)
-      } else {
-        setNote(res.error)
-      }
-    } catch (e) {
-      setNote(String(e))
-    } finally {
-      setBusyShot(false)
-    }
-  }
-
   const start = async () => {
     const g = goal.trim()
     if (!g || running) return
@@ -136,6 +120,33 @@ export const AgentPanel: React.FC = () => {
     void window.sidebarAPI.agentStop()
     setRunning(false)
   }
+
+  useEffect(() => {
+    if (!externalRunRequest) return
+    const g = externalRunRequest.goal.trim()
+    if (!g) return
+    setGoal(g)
+    setSteps([])
+    setTechnicalLog([])
+    setConclusion(null)
+    setRunning(true)
+    void window.sidebarAPI.agentStart(g).then((res) => {
+      if (!('ok' in res) || !res.ok) {
+        const err =
+          typeof res === 'object' &&
+          res &&
+          'error' in res &&
+          typeof (res as { error?: string }).error === 'string'
+            ? (res as { error: string }).error
+            : String(res)
+        setTechnicalLog((prev) => [...prev, `Failed to start: ${err}`])
+        setRunning(false)
+      }
+    }).catch((e) => {
+      setTechnicalLog((prev) => [...prev, `Failed to start: ${String(e)}`])
+      setRunning(false)
+    })
+  }, [externalRunRequest?.id])
 
   const clearPanels = () => {
     setSteps([])
@@ -245,7 +256,7 @@ export const AgentPanel: React.FC = () => {
         </details>
       </div>
 
-      <div className="border-t border-border pt-3 flex-shrink-0">
+      {/* <div className="border-t border-border pt-3 flex-shrink-0">
         <p className="text-xs text-muted-foreground mb-2">Manual screenshot probe</p>
         <Button variant="outline" size="sm" onClick={() => void capture()} disabled={busyShot}>
           {busyShot ? 'Capturing…' : 'Capture active tab'}
@@ -265,7 +276,7 @@ export const AgentPanel: React.FC = () => {
             )}
           />
         ) : null}
-      </div>
+      </div> */}
     </div>
   )
 }

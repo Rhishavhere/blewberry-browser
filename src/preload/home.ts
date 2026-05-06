@@ -22,10 +22,10 @@ const homeAPI = {
     if (!isHomePage()) return Promise.resolve(false);
     return ipcRenderer.invoke("home-navigate", url) as Promise<boolean>;
   },
-  openSidebarWithChat: (request: { message: string; messageId: string }) => {
+  openSidebarWithAgent: (request: { message: string; messageId: string }) => {
     if (!isHomePage()) return Promise.resolve(false);
     return ipcRenderer.invoke(
-      "home-open-sidebar-with-chat",
+      "home-open-sidebar-with-agent",
       request
     ) as Promise<boolean>;
   },

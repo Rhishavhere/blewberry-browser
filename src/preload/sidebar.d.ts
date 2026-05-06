@@ -44,6 +44,11 @@ type AgentEventPayload =
   | { type: "error"; message: string }
   | { type: "finished"; reason: string };
 
+type HomeAgentRunPayload = {
+  goal: string;
+  messageId: string;
+};
+
 interface SidebarAPI {
   sendChatMessage: (
     request: ChatRequest | Pick<ChatRequest, "message" | "messageId">
@@ -75,6 +80,9 @@ interface SidebarAPI {
 
   onAgentEvent: (callback: (event: AgentEventPayload) => void) => void;
   removeAgentEventListener: () => void;
+
+  onHomeAgentRun: (callback: (payload: HomeAgentRunPayload) => void) => void;
+  removeHomeAgentRunListener: () => void;
 }
 
 declare global {

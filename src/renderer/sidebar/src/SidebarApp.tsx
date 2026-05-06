@@ -10,6 +10,7 @@ type SidebarRail = 'chat' | 'agent'
 const SidebarContent: React.FC = () => {
     const { isDarkMode } = useDarkMode()
     const [rail, setRail] = useState<SidebarRail>('chat')
+    const [agentRunRequest, setAgentRunRequest] = useState<{ id: string; goal: string } | null>(null)
 
     // Apply dark mode class to the document
     useEffect(() => {
@@ -19,6 +20,22 @@ const SidebarContent: React.FC = () => {
             document.documentElement.classList.remove('dark')
         }
     }, [isDarkMode])
+
+    useEffect(() => {
+        const onHomeAgentRun = (payload: { goal: string; messageId: string }) => {
+            const goal = payload?.goal?.trim()
+            if (!goal) return
+            setRail('agent')
+            setAgentRunRequest({
+                id: payload.messageId || `${Date.now()}`,
+                goal,
+            })
+        }
+        window.sidebarAPI.onHomeAgentRun(onHomeAgentRun)
+        return () => {
+            window.sidebarAPI.removeHomeAgentRunListener()
+        }
+    }, [])
 
     return (
         <div className="h-screen flex flex-col bg-background border-l border-border">
@@ -54,7 +71,7 @@ const SidebarContent: React.FC = () => {
                     <Chat />
                 ) : (
                     <div className="flex-1 min-h-0 overflow-y-auto">
-                        <AgentPanel />
+                        <AgentPanel externalRunRequest={agentRunRequest} />
                     </div>
                 )}
             </div>

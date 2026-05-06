@@ -50,7 +50,7 @@ export const HomeApp: React.FC = () => {
       const url = queryToNavigateUrl(q);
       await window.homeAPI.navigateFromSearch(url);
     } else {
-      await window.homeAPI.openSidebarWithChat({
+      await window.homeAPI.openSidebarWithAgent({
         message: q,
         messageId: Date.now().toString(),
       });

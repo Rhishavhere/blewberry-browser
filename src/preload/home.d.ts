@@ -2,7 +2,7 @@ import { ElectronAPI } from "@electron-toolkit/preload";
 
 interface HomeAPI {
   navigateFromSearch: (url: string) => Promise<boolean>;
-  openSidebarWithChat: (request: {
+  openSidebarWithAgent: (request: {
     message: string;
     messageId: string;
   }) => Promise<boolean>;

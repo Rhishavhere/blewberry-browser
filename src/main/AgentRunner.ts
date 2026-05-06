@@ -119,6 +119,8 @@ The JSON must use exactly one of these shapes:
 
 Do NOT use {"action":"see"} — screenshots are included every turn automatically from now on.
 
+In the current scenerio {"action":"scroll","deltaY":400} is preferrable. anything else below that is too less.
+
 click_xy: x,y are pixel coords on THIS screenshot image (origin top-left), within bounds in the user message.
 
 Other rules:
