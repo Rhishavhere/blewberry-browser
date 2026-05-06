@@ -34,6 +34,7 @@ type AgentEventPayload =
       step: number;
       action: AgentStepAction;
     }
+  | { type: "conclusion"; text: string }
   | { type: "error"; message: string }
   | { type: "finished"; reason: string };
 

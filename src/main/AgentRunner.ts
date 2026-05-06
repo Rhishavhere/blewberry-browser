@@ -28,8 +28,61 @@ export type AgentStep = z.infer<typeof AgentStepSchema>;
 export type AgentEvent =
   | { type: "log"; message: string }
   | { type: "step"; step: number; action: AgentStep }
+  /** User-facing prose summary (shown in the Reply card, not mixed with technical logs). */
+  | { type: "conclusion"; text: string }
   | { type: "error"; message: string }
   | { type: "finished"; reason: string };
+
+async function writeUserConclusion(args: {
+  goal: string;
+  historyLines: readonly string[];
+  agentDoneSummary: string;
+  model: LanguageModel | null;
+  signal: AbortSignal;
+}): Promise<string> {
+  const { goal, historyLines, agentDoneSummary, model, signal } = args;
+  if (!model) {
+    return `${agentDoneSummary}`;
+  }
+  const trace =
+    historyLines.length > 0
+      ? historyLines.slice(-25).join("\n")
+      : "(no recorded actions)";
+  try {
+    const { text } = await generateText({
+      model,
+      system: `Write a concise conclusion for someone who delegated a browsing task.
+2–5 sentences, friendly and clear. Mention what happened, whether the stated goal appears satisfied, any notable page or search results, and what the user might do next when relevant.
+
+Rules: Plain language only — no JSON, no XML tags, no bullet lists framed as markdown if you can avoid them. Do not apologize excessively.`,
+      temperature: 0.35,
+      maxOutputTokens: 450,
+      abortSignal: signal,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: [
+                `User goal: ${goal}`,
+                "",
+                `Agent closing note (technical): ${agentDoneSummary}`,
+                "",
+                `Action trace (recent lines):`,
+                trace,
+              ].join("\n"),
+            },
+          ],
+        },
+      ],
+    });
+    const out = text.trim();
+    return out.length > 0 ? out : agentDoneSummary;
+  } catch {
+    return agentDoneSummary;
+  }
+}
 
 const SYSTEM_BLIND = `You plan browser actions WITHOUT seeing the page yet (no screenshot on this turn).
 
@@ -204,6 +257,10 @@ export class AgentRunner {
     const model = getAgentLanguageModel();
     if (!model) {
       emit({
+        type: "conclusion",
+        text: "The agent cannot start because no LLM is configured. Add ANTHROPIC_API_KEY or OPENAI_API_KEY (and LLM_PROVIDER) to your .env file.",
+      });
+      emit({
         type: "error",
         message:
           "Agent model not configured: set ANTHROPIC_API_KEY or OPENAI_API_KEY and LLM_PROVIDER if needed.",
@@ -226,6 +283,10 @@ export class AgentRunner {
     try {
       while (executedSteps < maxSteps && plannerRounds < maxPlannerRounds) {
         if (signal.aborted) {
+          emit({
+            type: "conclusion",
+            text: "Stopped before completion. Try running again with the same or a narrower goal.",
+          });
           emit({ type: "finished", reason: "stopped" });
           return;
         }
@@ -234,6 +295,10 @@ export class AgentRunner {
 
         const tab = getActiveTab();
         if (!tab) {
+          emit({
+            type: "conclusion",
+            text: "No active tab was found. Create or select a tab first, then run the agent again.",
+          });
           emit({ type: "error", message: "no_active_tab" });
           return;
         }
@@ -256,6 +321,10 @@ export class AgentRunner {
               viewH: vp[1],
             };
           } catch (e) {
+            emit({
+              type: "conclusion",
+              text: `Couldn't capture the active tab: ${String(e)}. Check that a tab is visible and try again.`,
+            });
             emit({ type: "error", message: `screenshot_failed: ${String(e)}` });
             return;
           }
@@ -317,6 +386,11 @@ export class AgentRunner {
           });
           action = await parseOrRepairAgentStep(text, model, signal, emit);
         } catch (e) {
+          emit({
+            type: "conclusion",
+            text:
+              "The planner hit an error while talking to the AI. Check your API key and model name in .env, then retry.",
+          });
           emit({ type: "error", message: `llm_error: ${String(e)}` });
           return;
         }
@@ -345,6 +419,11 @@ export class AgentRunner {
             action.action === "scroll")
         ) {
           emit({
+            type: "conclusion",
+            text:
+              "This step needs a screenshot first. The agent should reply with only {\"action\":\"see\"} before clicking or typing.",
+          });
+          emit({
             type: "error",
             message:
               "blind_turn: use {\"action\":\"see\"} once before click_xy, type, or scroll.",
@@ -353,20 +432,44 @@ export class AgentRunner {
         }
 
         emit({ type: "step", step: executedSteps + 1, action });
-        emit({ type: "log", message: JSON.stringify(action) });
 
         if (action.action === "done") {
-          emit({ type: "finished", reason: action.summary });
+          const summary = action.summary.trim();
+          emit({
+            type: "conclusion",
+            text: await writeUserConclusion({
+              goal,
+              historyLines,
+              agentDoneSummary:
+                summary ||
+                "The agent indicated the task is finished (no extra detail).",
+              model,
+              signal,
+            }),
+          });
+          emit({ type: "finished", reason: summary || "done" });
           return;
         }
 
-        await executeStep(
-          tab,
-          action,
-          dims,
-          createTabAndActivate,
-          emit
-        );
+        try {
+          await executeStep(
+            tab,
+            action,
+            dims,
+            createTabAndActivate,
+            emit
+          );
+        } catch (execErr) {
+          emit({
+            type: "conclusion",
+            text: `Something went wrong while executing that action: ${String(execErr)}`,
+          });
+          emit({
+            type: "error",
+            message: `execute_step_failed: ${String(execErr)}`,
+          });
+          return;
+        }
         historyLines.push(JSON.stringify(action));
         executedSteps += 1;
         visionFromNow = true;
@@ -374,7 +477,19 @@ export class AgentRunner {
         await sleep(350);
       }
 
-      emit({ type: "finished", reason: "max_steps" });
+      if (executedSteps >= maxSteps) {
+        emit({
+          type: "conclusion",
+          text: `Ran out of allowed actions (${maxSteps} steps) before the agent signaled completion. Increase the limit or shorten the goal.`,
+        });
+        emit({ type: "finished", reason: "max_steps" });
+      } else {
+        emit({
+          type: "conclusion",
+          text: `Stopped because the planner hit too many rounds (${maxPlannerRounds}). The agent may have been looping (for example screenshot requests). Try a clearer goal or rerun.`,
+        });
+        emit({ type: "finished", reason: "max_planner_rounds" });
+      }
     } finally {
       this.abortController = null;
     }

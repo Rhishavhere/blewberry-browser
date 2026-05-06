@@ -40,6 +40,7 @@ type AgentStepAction =
 type AgentEventPayload =
   | { type: "log"; message: string }
   | { type: "step"; step: number; action: AgentStepAction }
+  | { type: "conclusion"; text: string }
   | { type: "error"; message: string }
   | { type: "finished"; reason: string };
 
