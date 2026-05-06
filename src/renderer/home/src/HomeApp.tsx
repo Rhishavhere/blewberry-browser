@@ -59,7 +59,15 @@ export const HomeApp: React.FC = () => {
   };
 
   return (
-    <div className="relative flex flex-col min-h-screen bg-background">
+    <div className="relative flex flex-col min-h-screen">
+      <div
+        className="absolute inset-0 -z-10 pointer-events-none opacity-35 bg-[length:auto_85%] md:bg-contain bg-left-bottom bg-no-repeat"
+        style={{ 
+          // backgroundImage: "url('/newton.png')" 
+          
+        }}
+        aria-hidden
+      />
       <button
         type="button"
         onClick={() => void window.homeAPI.toggleSidebar()}

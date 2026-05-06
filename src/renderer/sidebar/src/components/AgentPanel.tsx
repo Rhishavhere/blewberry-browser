@@ -268,27 +268,24 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ externalRunRequest }) =>
       {/* Body */}
       <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4 space-y-4">
         {isCleanSlate ? (
-          <div className="flex flex-col items-center justify-center min-h-[min(280px,calc(100vh-220px))] px-2 py-6 text-center">
-            <div
-              className={cn(
-                'mb-5 flex size-16 items-center justify-center rounded-3xl',
-                'bg-gradient-to-br from-violet-500/15 via-fuchsia-500/10 to-transparent',
-                'ring-1 ring-violet-500/20 dark:ring-violet-400/15 shadow-sm shadow-violet-500/10'
-              )}
-              aria-hidden>
-              <Sparkles className="size-8 text-violet-600 dark:text-violet-400" strokeWidth={1.5} />
-            </div>
-            <p className="text-base font-semibold tracking-tight text-foreground">Start a task</p>
-            <p className="mt-2 max-w-[260px] text-sm leading-relaxed text-muted-foreground">
-              Tell me what to do in your tabs—search, navigate, summarize a page—and I’ll walk through it and recap when I’m done.
-            </p>
-            <button
-              type="button"
-              onClick={() => composerRef.current?.focus()}
-              className="mt-6 text-[13px] font-medium text-violet-600 dark:text-violet-400 hover:underline underline-offset-4">
-              Type below to begin
-            </button>
-          </div>
+            <>
+              <div className="flex items-center justify-center h-full min-h-[400px]">
+                <div className="text-center animate-fade-in max-w-md mx-auto gap-2 flex flex-col">
+                  <p className="text-foreground text-sm">
+                      Blueberry on Autopilot
+                  </p>
+                </div>
+              </div>
+              <div
+                className="absolute inset-0 pointer-events-none opacity-40 bg-bottom bg-no-repeat bg-[length:auto_75%] sm:bg-contain"
+                style={{ 
+                  backgroundImage: "url('/act.png')" ,
+                  backgroundPositionY:300,
+                  backgroundPositionX:-50
+                }}
+                aria-hidden
+              />
+            </>
         ) : (
           <>
             {/* Request card */}
@@ -361,10 +358,10 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ externalRunRequest }) =>
               >
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm [&::-webkit-details-marker]:hidden hover:bg-muted/50">
                   <span className="flex items-center gap-2 font-medium">
-                    <ListOrdered className="size-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                    <ListOrdered className="size-4 text-black dark:text-violet-400 shrink-0" />
                     What I did
                   </span>
-                  <span className="rounded-full bg-violet-100 dark:bg-violet-950 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-100">
+                  <span className="rounded-full shadow dark:bg-violet-950 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-100">
                     {steps.length} {steps.length === 1 ? 'step' : 'steps'}
                   </span>
                 </summary>
@@ -430,7 +427,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ externalRunRequest }) =>
                       if (!running && composer.trim()) void submitComposer()
                     }
                   }}
-                  placeholder="Send a message..."
+                  placeholder="Ask the agent a favour..."
                   disabled={running}
                   className="w-full resize-none outline-none bg-transparent text-foreground placeholder:text-muted-foreground min-h-[24px] max-h-[200px] disabled:opacity-55"
                   rows={1}

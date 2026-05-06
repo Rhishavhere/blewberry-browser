@@ -38,7 +38,14 @@ const SidebarContent: React.FC = () => {
     }, [])
 
     return (
-        <div className="h-screen flex flex-col bg-background border-l border-border">
+        <div className="h-screen flex flex-col bg-background border-l border-border relative">
+            {rail === 'chat' && (
+                <div
+                    className="absolute inset-0 pointer-events-none opacity-25 bg-bottom bg-no-repeat bg-[length:auto_50%] sm:bg-contain"
+                    style={{ backgroundImage: "url('/look.png')" }}
+                    aria-hidden
+                />
+            )}
             <div className="flex shrink-0 gap-1 p-2 border-b border-border">
                 <button
                     type="button"

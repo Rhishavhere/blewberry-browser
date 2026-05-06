@@ -20,6 +20,8 @@ export default defineConfig({
   },
   renderer: {
     root: "src/renderer",
+    /** Serve repo `resources/` PNGs at `/filename.png` in dev and copy them into the renderer build. */
+    publicDir: resolve(__dirname, "resources"),
     build: {
       rollupOptions: {
         input: {
