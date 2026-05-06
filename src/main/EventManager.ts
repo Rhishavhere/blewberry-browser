@@ -245,20 +245,24 @@ export class EventManager {
         this.agentRunner.stop();
         const sidebarWc = this.mainWindow.sidebar.view.webContents;
 
-        void this.agentRunner.run({
-          goal,
-          maxSteps:
-            typeof payload?.maxSteps === "number" && payload.maxSteps > 0
-              ? Math.min(payload.maxSteps, 60)
-              : 25,
-          getActiveTab: () => this.mainWindow.activeTab,
-          createTabAndActivate: (url?: string) => {
-            const t = this.mainWindow.createTab(url);
-            this.mainWindow.switchActiveTab(t.id);
-            return t;
-          },
-          emit: (event) => sidebarWc.send("agent-event", event),
-        });
+        void this.agentRunner
+          .run({
+            goal,
+            maxSteps:
+              typeof payload?.maxSteps === "number" && payload.maxSteps > 0
+                ? Math.min(payload.maxSteps, 60)
+                : 25,
+            getActiveTab: () => this.mainWindow.activeTab,
+            createTabAndActivate: (url?: string) => {
+              const t = this.mainWindow.createTab(url);
+              this.mainWindow.switchActiveTab(t.id);
+              return t;
+            },
+            emit: (event) => sidebarWc.send("agent-event", event),
+          })
+          .finally(() => {
+            this.mainWindow.focusActiveTabContents();
+          });
 
         return { ok: true };
       }
@@ -266,6 +270,7 @@ export class EventManager {
 
     ipcMain.handle("agent-stop", () => {
       this.agentRunner.stop();
+      this.mainWindow.focusActiveTabContents();
       return true;
     });
   }

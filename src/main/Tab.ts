@@ -143,6 +143,15 @@ export class Tab {
     });
   }
 
+  /** Press Enter in the focused field / page (search, forms, default button). */
+  pressEnter(): void {
+    const wc = this.webContentsView.webContents;
+    wc.focus();
+    const keyCode = "Enter";
+    wc.sendInputEvent({ type: "keyDown", keyCode });
+    wc.sendInputEvent({ type: "keyUp", keyCode });
+  }
+
   stop(): void {
     this.webContentsView.webContents.stop();
   }

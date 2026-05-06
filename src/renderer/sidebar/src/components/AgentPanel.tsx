@@ -1,4 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ArrowUp,
+  CheckCircle2,
+  ChevronDown,
+  ListOrdered,
+  Loader2,
+  Sparkles,
+  XCircle,
+} from 'lucide-react'
 import { Button } from '@common/components/Button'
 import { cn } from '@common/lib/utils'
 
@@ -10,6 +19,7 @@ type AgentEventPayload =
   | { type: 'finished'; reason: string }
 
 type StepRow = { step: number; label: string; raw: string }
+
 type AgentPanelProps = {
   externalRunRequest?: {
     id: string
@@ -17,48 +27,126 @@ type AgentPanelProps = {
   } | null
 }
 
-function formatActionLabel(action: Record<string, unknown>): string {
+type RunStatus = 'idle' | 'running' | 'completed' | 'error'
+
+function humanizeStep(action: Record<string, unknown>): string {
   const a = action.action
-  if (typeof a !== 'string') return JSON.stringify(action)
+  if (typeof a !== 'string') return 'Ran an action'
   switch (a) {
     case 'see':
-      return 'Request screenshot'
+      return 'Looked at the page (screenshot)'
     case 'new_tab': {
       const u = action.url
-      return typeof u === 'string' && u
-        ? `New tab → ${u}`
-        : 'New tab (home)'
+      return typeof u === 'string' && u ? `Opened a new tab → ${u}` : 'Opened a new tab'
     }
-    case 'navigate':
-      return typeof action.url === 'string' ? `Navigate → ${action.url}` : 'Navigate'
+    case 'navigate': {
+      const u = action.url
+      return typeof u === 'string' ? `Opened ${hostnameOnly(u)}` : 'Navigated to a page'
+    }
     case 'click_xy':
-      return typeof action.x === 'number' && typeof action.y === 'number'
-        ? `Click (${action.x}, ${action.y})`
-        : 'Click'
-    case 'type':
-      return typeof action.text === 'string'
-        ? `Type “${action.text.length > 40 ? `${action.text.slice(0, 40)}…` : action.text}”`
-        : 'Type'
+      return 'Clicked a thing'
+    case 'type': {
+      const t = action.text
+      const s =
+        typeof t === 'string' ? (t.length > 42 ? `${t.slice(0, 42)}…` : t) : ''
+      return s ? `Typed “${s}”` : 'Typed text into the focused field'
+    }
+    case 'press_enter':
+      return 'Pressed Enter'
     case 'scroll':
-      return typeof action.deltaY === 'number' ? `Scroll ${action.deltaY}px` : 'Scroll'
+      return typeof action.deltaY === 'number'
+        ? `Scrolled ${action.deltaY > 0 ? 'down' : 'up'} the page`
+        : 'Scrolled the page'
     case 'wait':
-      return typeof action.ms === 'number' ? `Wait ${action.ms}ms` : 'Wait'
+      return typeof action.ms === 'number' ? `Waited for the page (${action.ms} ms)` : 'Waited for the page to settle'
     case 'done':
-      return typeof action.summary === 'string'
-        ? `Done — ${action.summary.length > 80 ? `${action.summary.slice(0, 80)}…` : action.summary}`
-        : 'Done'
+      return 'Wrapped up the task'
     default:
-      return JSON.stringify(action)
+      return 'Continued browsing'
+  }
+}
+
+function hostnameOnly(url: string): string {
+  try {
+    const h = new URL(url).hostname
+    return h.replace(/^www\./, '')
+  } catch {
+    return url.slice(0, 48)
   }
 }
 
 export const AgentPanel: React.FC<AgentPanelProps> = ({ externalRunRequest }) => {
   const [goal, setGoal] = useState('')
   const [running, setRunning] = useState(false)
+  const [runHadError, setRunHadError] = useState(false)
   const [conclusion, setConclusion] = useState<string | null>(null)
   const [steps, setSteps] = useState<StepRow[]>([])
   const [technicalLog, setTechnicalLog] = useState<string[]>([])
+  const [stepsExpanded, setStepsExpanded] = useState(false)
+  /** Dedicated text for the bottom “what next?” field only (not synced to the request card). */
+  const [composer, setComposer] = useState('')
+  const [composerFocused, setComposerFocused] = useState(false)
   const logEndRef = useRef<HTMLDivElement>(null)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+
+
+  const status: RunStatus = useMemo(() => {
+    if (running) return 'running'
+    if (runHadError) return 'error'
+    if (conclusion !== null || steps.length > 0) return 'completed'
+    return 'idle'
+  }, [running, runHadError, conclusion, steps.length])
+
+  const beginRunFromGoal = useCallback(async (raw: string) => {
+    const g = raw.trim()
+    if (!g) return false
+    setSteps([])
+    setTechnicalLog([])
+    setConclusion(null)
+    setRunHadError(false)
+    setGoal(g)
+    setStepsExpanded(false)
+    setRunning(true)
+    try {
+      const res = await window.sidebarAPI.agentStart(g)
+      if (!('ok' in res) || !res.ok) {
+        const err =
+          typeof res === 'object' &&
+          res &&
+          'error' in res &&
+          typeof (res as { error?: string }).error === 'string'
+            ? (res as { error: string }).error
+            : String(res)
+        setTechnicalLog((prev) => [...prev, `Failed to start: ${err}`])
+        setRunHadError(true)
+        setRunning(false)
+        setConclusion(`We couldn't start this run (${err}). Check the goal and try again.`)
+        return false
+      }
+    } catch (e) {
+      setTechnicalLog((prev) => [...prev, `Failed to start: ${String(e)}`])
+      setRunHadError(true)
+      setRunning(false)
+      setConclusion(`Something blocked the agent from starting: ${String(e)}`)
+      return false
+    }
+    return true
+  }, [])
+
+  const submitComposer = useCallback(async () => {
+    const text = composer.trim()
+    if (!text || running) return
+    const ok = await beginRunFromGoal(text)
+    if (ok) setComposer('')
+  }, [composer, running, beginRunFromGoal])
+
+  useEffect(() => {
+    if (!composerRef.current) return
+    composerRef.current.style.height = 'auto'
+    const scrollHeight = composerRef.current.scrollHeight
+    const newHeight = Math.min(scrollHeight, 200)
+    composerRef.current.style.height = `${newHeight}px`
+  }, [composer])
 
   useEffect(() => {
     const onEvent = (e: AgentEventPayload) => {
@@ -67,13 +155,14 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ externalRunRequest }) =>
         setTechnicalLog((prev) => [...prev, `[${ts}] ${e.message}`])
       } else if (e.type === 'step') {
         const raw = JSON.stringify(e.action)
-        const label = formatActionLabel(e.action)
+        const label = humanizeStep(e.action)
         setSteps((prev) => [...prev, { step: e.step, label, raw }])
       } else if (e.type === 'conclusion') {
         setConclusion(e.text.trim())
       } else if (e.type === 'error') {
         setTechnicalLog((prev) => [...prev, `[${ts}] ERROR: ${e.message}`])
         setRunning(false)
+        setRunHadError(true)
       } else if (e.type === 'finished') {
         setTechnicalLog((prev) => [...prev, `[${ts}] stopped (${e.reason})`])
         setRunning(false)
@@ -90,193 +179,286 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ externalRunRequest }) =>
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [technicalLog])
 
-  const start = async () => {
-    const g = goal.trim()
-    if (!g || running) return
-    setSteps([])
-    setTechnicalLog([])
-    setConclusion(null)
-    setRunning(true)
-    try {
-      const res = await window.sidebarAPI.agentStart(g)
-      if (!('ok' in res) || !res.ok) {
-        const err =
-          typeof res === 'object' &&
-          res &&
-          'error' in res &&
-          typeof (res as { error?: string }).error === 'string'
-            ? (res as { error: string }).error
-            : String(res)
-        setTechnicalLog((prev) => [...prev, `Failed to start: ${err}`])
-        setRunning(false)
-      }
-    } catch (e) {
-      setTechnicalLog((prev) => [...prev, `Failed to start: ${String(e)}`])
-      setRunning(false)
-    }
-  }
+  useEffect(() => {
+    if (!externalRunRequest) return
+    void beginRunFromGoal(externalRunRequest.goal)
+  }, [externalRunRequest?.id, beginRunFromGoal])
 
   const stop = () => {
     void window.sidebarAPI.agentStop()
     setRunning(false)
   }
 
-  useEffect(() => {
-    if (!externalRunRequest) return
-    const g = externalRunRequest.goal.trim()
-    if (!g) return
-    setGoal(g)
+  const clearRun = () => {
+    stop()
     setSteps([])
     setTechnicalLog([])
     setConclusion(null)
-    setRunning(true)
-    void window.sidebarAPI.agentStart(g).then((res) => {
-      if (!('ok' in res) || !res.ok) {
-        const err =
-          typeof res === 'object' &&
-          res &&
-          'error' in res &&
-          typeof (res as { error?: string }).error === 'string'
-            ? (res as { error: string }).error
-            : String(res)
-        setTechnicalLog((prev) => [...prev, `Failed to start: ${err}`])
-        setRunning(false)
-      }
-    }).catch((e) => {
-      setTechnicalLog((prev) => [...prev, `Failed to start: ${String(e)}`])
-      setRunning(false)
-    })
-  }, [externalRunRequest?.id])
-
-  const clearPanels = () => {
-    setSteps([])
-    setTechnicalLog([])
-    setConclusion(null)
+    setRunHadError(false)
+    setGoal('')
+    setComposer('')
+    setStepsExpanded(false)
   }
 
+
+  const STEPS_PREVIEW = 4
+  const displayedSteps =
+    stepsExpanded || steps.length <= STEPS_PREVIEW ? steps : steps.slice(0, STEPS_PREVIEW)
+
+  const idleStatusLabel = useMemo(() => {
+    if (status === 'idle') return 'Ready'
+    if (status === 'error') return 'Needs attention'
+    return 'Completed'
+  }, [status])
+
+  const isCleanSlate =
+    !running &&
+    !goal.trim() &&
+    conclusion === null &&
+    steps.length === 0
+
   return (
-    <div className="flex flex-col h-full p-4 gap-3 min-h-0">
-      <div>
-        <p className="text-sm font-medium">Agent</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          First turn is planner-only (no screenshot unless the model chooses{' '}
-          <code className="text-[0.7rem]">see</code>). Afterwards every turn uses a screenshot. You get a{' '}
-          <span className="font-medium text-foreground/90">written reply</span> when the run ends.
-        </p>
-      </div>
-
-      <label className="flex flex-col gap-1 flex-shrink-0">
-        <span className="text-xs text-muted-foreground">Goal</span>
-        <textarea
-          value={goal}
-          onChange={(ev) => setGoal(ev.target.value)}
-          placeholder="e.g. When did Strawberry browser ship? Search and summarize."
-          rows={3}
-          disabled={running}
-          className={cn(
-            'w-full rounded-md border border-border bg-background px-3 py-2 text-sm',
-            'placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            'resize-y min-h-[72px]'
-          )}
-        />
-      </label>
-
-      <div className="flex gap-2 flex-shrink-0 flex-wrap">
-        <Button variant="default" onClick={() => void start()} disabled={running || !goal.trim()}>
-          {running ? 'Running…' : 'Run'}
-        </Button>
-        <Button variant="outline" onClick={() => stop()} disabled={!running}>
-          Stop
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => clearPanels()}
-          disabled={steps.length === 0 && technicalLog.length === 0 && !conclusion}>
-          Clear activity
-        </Button>
-      </div>
-
-      <div className="flex-shrink-0 rounded-xl border border-border bg-gradient-to-b from-muted/50 to-muted/25 p-3 shadow-sm">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-2">Reply</p>
-        {running && !conclusion ? (
-          <p className="text-sm text-muted-foreground italic">Working… conclusion appears when the run finishes.</p>
-        ) : conclusion ? (
-          <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">{conclusion}</p>
-        ) : (
-          <p className="text-sm text-muted-foreground">Summary and takeaways show here after a successful finish or stop.</p>
-        )}
-      </div>
-
-      <div className="flex-1 flex flex-col min-h-0 gap-2">
-        <div className="flex items-center justify-between flex-shrink-0">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Steps</p>
-          <span className="text-[10px] text-muted-foreground">{steps.length} executed</span>
-        </div>
-        <div className="flex-1 min-h-[56px] overflow-y-auto rounded-lg border border-border bg-background/80 divide-y divide-border">
-          {steps.length === 0 ? (
-            <div className="p-3 text-xs text-muted-foreground">Executed actions listed here.</div>
+    <div className="flex flex-col h-full min-h-0 bg-gradient-to-b from-violet-50/40 dark:from-violet-950/20 via-background to-background">
+      {/* Header */}
+      <div className="shrink-0 px-4 pt-4 pb-2 flex items-start justify-between gap-2 border-b border-border/60 bg-background/80 backdrop-blur-sm">
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+          {running ? (
+            <>
+              <span className="inline-flex items-center gap-2 rounded-full border border-amber-200/80 bg-amber-50/90 dark:bg-amber-950/40 dark:border-amber-800 px-3 py-1 text-[11px] font-medium text-amber-950 dark:text-amber-50">
+                <Loader2 className="size-3.5 animate-spin" />
+                Working
+              </span>
+              <Button variant="outline" size="xs" type="button" className="h-7 px-2 text-[11px]" onClick={() => stop()}>
+                Stop
+              </Button>
+            </>
           ) : (
-            steps.map((s, i) => (
-              <div key={`${s.step}-${i}`} className="px-3 py-2 flex gap-2 text-sm items-start">
-                <span className="flex-shrink-0 text-[11px] font-mono tabular-nums text-muted-foreground w-14 pt-0.5">
-                  #{s.step}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-foreground leading-snug">{s.label}</div>
-                  <div className="text-[11px] font-mono text-muted-foreground/90 mt-0.5 truncate" title={s.raw}>
-                    {s.raw}
+            <>
+              <span
+                className={cn(
+                  'inline-flex items-center gap-2 rounded-lg px-3 py-1 text-[11px] font-medium',
+                  status === 'completed' &&
+                    'bg-emerald-50/95 text-emerald-950 dark:bg-emerald-950/35 dark:border-emerald-900 dark:text-emerald-50',
+                  status === 'error' &&
+                    'bg-red-50/95 text-red-950 dark:bg-red-950/35 dark:border-red-900 dark:text-red-50',
+                  status === 'idle' &&
+                    'bg-muted/60 text-muted-foreground'
+                )}>
+                {status !== 'idle' && (
+                  <span
+                    className={cn(
+                      'flex size-1.5 rounded-full',
+                      status === 'error' ? 'bg-red-500' : 'bg-emerald-500'
+                    )}
+                  />
+                )}
+                {idleStatusLabel}
+                
+              </span>
+              {(steps.length > 0 || conclusion) && (
+                <Button variant="ghost" size="xs" type="button" className="h-7 px-2 text-[11px]" onClick={() => clearRun()}>
+                  New task
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4 space-y-4">
+        {isCleanSlate ? (
+          <div className="flex flex-col items-center justify-center min-h-[min(280px,calc(100vh-220px))] px-2 py-6 text-center">
+            <div
+              className={cn(
+                'mb-5 flex size-16 items-center justify-center rounded-3xl',
+                'bg-gradient-to-br from-violet-500/15 via-fuchsia-500/10 to-transparent',
+                'ring-1 ring-violet-500/20 dark:ring-violet-400/15 shadow-sm shadow-violet-500/10'
+              )}
+              aria-hidden>
+              <Sparkles className="size-8 text-violet-600 dark:text-violet-400" strokeWidth={1.5} />
+            </div>
+            <p className="text-base font-semibold tracking-tight text-foreground">Start a task</p>
+            <p className="mt-2 max-w-[260px] text-sm leading-relaxed text-muted-foreground">
+              Tell me what to do in your tabs—search, navigate, summarize a page—and I’ll walk through it and recap when I’m done.
+            </p>
+            <button
+              type="button"
+              onClick={() => composerRef.current?.focus()}
+              className="mt-6 text-[13px] font-medium text-violet-600 dark:text-violet-400 hover:underline underline-offset-4">
+              Type below to begin
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Request card */}
+            <section
+              className={cn(
+                'rounded-2xl px-4 py-3 transition-colors',
+                'bg-violet-500/5',
+                running && 'opacity-95'
+              )}
+            >
+              <div className="flex gap-3 items-center">
+                <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-white dark:bg-muted border border-violet-200/60 dark:border-border">
+                  <ListOrdered className="size-4 text-violet-600 dark:text-violet-400" />
+                </div>
+                <div className="flex-1 min-w-0 flex flex-col gap-2">
+                  <p className="text-sm leading-relaxed font-semibold text-foreground whitespace-pre-wrap">
+                    {goal}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* Result card */}
+            <section className="rounded-2xl shadow-md overflow-hidden">
+              <div className={cn('px-4 py-3', running ? 'border-border/70 bg-muted/30' : 'border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/20')}>
+                <div className="flex gap-2 items-center">
+                  {running ? (
+                    <Loader2 className="size-5 animate-spin text-violet-600 mt-0.5 shrink-0" />
+                  ) : runHadError ? (
+                    <XCircle className="size-5 text-red-500 mt-0.5 shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm text-foreground">
+                      {running
+                        ? 'On it…'
+                        : conclusion
+                          ? runHadError
+                            ? 'Couldnt finish cleanly'
+                              : 'All set!'
+                          : 'Your summary will appear here'}
+                    </p>
                   </div>
                 </div>
               </div>
-            ))
-          )}
-        </div>
+              <div className="p-4 space-y-4">
+                {running && (
+                  <div className="space-y-2 animate-pulse">
+                    <div className="h-3 bg-muted rounded w-5/6" />
+                    <div className="h-3 bg-muted rounded w-full" />
+                    <div className="h-3 bg-muted rounded w-4/6" />
+                  </div>
+                )}
+                {!running && conclusion && (
+                  <>
+                    <div className="text-sm font-sans leading-relaxed text-foreground whitespace-pre-wrap space-y-2">
+                      {conclusion.trim()}
+                    </div>
+                  </>
+                )}
+              </div>
+            </section>
 
-        <details className="flex-shrink-0 rounded-lg border border-dashed border-border bg-muted/20">
-          <summary className="cursor-pointer select-none px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Technical log
-          </summary>
-          <div
-            className={cn(
-              'max-h-[120px] overflow-y-auto px-3 pb-3 font-mono text-[10px] leading-relaxed text-muted-foreground',
-              'border-t border-border pt-2'
-            )}>
-            {technicalLog.length === 0 ? (
-              <span className="italic">Repair messages, clicks, stops…</span>
-            ) : (
-              technicalLog.map((line, i) => (
-                <div key={`${i}-${line.slice(0, 24)}`} className="whitespace-pre-wrap break-words">
-                  {line}
-                </div>
-              ))
+            {/* What I did */}
+            {steps.length > 0 && (
+              <details
+                open
+                className="group rounded-2xl dark:border-violet-900/40 bg-muted/40 dark:bg-muted/25 overflow-hidden"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm [&::-webkit-details-marker]:hidden hover:bg-muted/50">
+                  <span className="flex items-center gap-2 font-medium">
+                    <ListOrdered className="size-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                    What I did
+                  </span>
+                  <span className="rounded-full bg-violet-100 dark:bg-violet-950 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-100">
+                    {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+                  </span>
+                </summary>
+                <ul className="border-t border-border/60 divide-y divide-border/50 pb-3">
+                  {displayedSteps.map((s, i) => (
+                    <li key={`${s.step}-${i}`} className="flex items-center gap-3 px-4 py-2.5 text-xs font-medium leading-snug">
+                      <div className='w-2 h-2 rounded-full bg-green-400'></div>
+                      <span className="text-foreground/60">{s.label}</span>
+                    </li>
+                  ))}
+                </ul>
+                {steps.length > STEPS_PREVIEW && (
+                  <button
+                    type="button"
+                    className="w-full pb-3 text-center text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline flex items-center justify-center gap-1"
+                    onClick={() => setStepsExpanded((x) => !x)}
+                  >
+                    {stepsExpanded ? 'Show fewer steps' : 'View all steps'}
+                    <ChevronDown className={cn('size-4 transition-transform', stepsExpanded && 'rotate-180')} />
+                  </button>
+                )}
+              </details>
             )}
-            <div ref={logEndRef} />
-          </div>
-        </details>
+
+            {/* <details className="rounded-xl border border-dashed border-border/80 bg-muted/15">
+              <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Technical details
+              </summary>
+              <div className="max-h-[104px] overflow-y-auto px-3 pb-2 font-mono text-[10px] text-muted-foreground whitespace-pre-wrap">
+                {technicalLog.length === 0 ? (
+                  <span className="italic">Nothing logged yet.</span>
+                ) : (
+                  technicalLog.map((line, i) => (
+                    <div key={`${i}-${line.slice(0, 28)}`}>{line}</div>
+                  ))
+                )}
+                <div ref={logEndRef} />
+              </div>
+            </details> */}
+          </>
+        )}
       </div>
 
-      {/* <div className="border-t border-border pt-3 flex-shrink-0">
-        <p className="text-xs text-muted-foreground mb-2">Manual screenshot probe</p>
-        <Button variant="outline" size="sm" onClick={() => void capture()} disabled={busyShot}>
-          {busyShot ? 'Capturing…' : 'Capture active tab'}
-        </Button>
-        {note ? (
-          <p className="text-xs text-muted-foreground whitespace-pre-wrap border border-border rounded-lg p-2 bg-muted/40 mt-2">
-            {note}
-          </p>
-        ) : null}
-        {preview ? (
-          <img
-            src={preview}
-            alt="Active tab capture"
-            className={cn(
-              'mt-2 max-h-[140px] w-auto max-w-full mx-auto rounded-lg border border-border shadow-sm',
-              'object-contain bg-muted/20'
-            )}
-          />
-        ) : null}
-      </div> */}
+      {/* Bottom composer */}
+      <div className="shrink-0 p-4">
+        <div className={cn(
+          'w-full border p-3 rounded-3xl bg-background dark:bg-secondary',
+          'shadow-chat animate-spring-scale outline-none transition-all duration-200',
+          composerFocused ? 'border-primary/20 dark:border-primary/30' : 'border-border'
+        )}>
+          <div className="w-full px-3 py-2">
+            <div className="w-full flex items-start gap-3">
+              <div className="relative flex-1 overflow-hidden">
+                <textarea
+                  ref={composerRef}
+                  value={composer}
+                  onChange={(e) => setComposer(e.target.value)}
+                  onFocus={() => setComposerFocused(true)}
+                  onBlur={() => setComposerFocused(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      if (!running && composer.trim()) void submitComposer()
+                    }
+                  }}
+                  placeholder="Send a message..."
+                  disabled={running}
+                  className="w-full resize-none outline-none bg-transparent text-foreground placeholder:text-muted-foreground min-h-[24px] max-h-[200px] disabled:opacity-55"
+                  rows={1}
+                  style={{ lineHeight: '24px' }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="w-full flex items-center gap-1.5 px-1 mt-2 mb-1">
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={() => void submitComposer()}
+              disabled={running || !composer.trim()}
+              aria-label="Run agent"
+              className={cn(
+                'size-9 rounded-full flex items-center justify-center',
+                'transition-all duration-200',
+                'bg-primary text-primary-foreground',
+                'hover:opacity-80 disabled:opacity-50'
+              )}
+            >
+              {running ? <Loader2 className="size-5 animate-spin" /> : <ArrowUp className="size-5" />}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

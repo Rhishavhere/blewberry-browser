@@ -18,6 +18,7 @@ export const AgentStepSchema = z.discriminatedUnion("action", [
     y: z.number(),
   }),
   z.object({ action: z.literal("type"), text: z.string() }),
+  z.object({ action: z.literal("press_enter") }),
   z.object({ action: z.literal("scroll"), deltaY: z.number() }),
   z.object({ action: z.literal("wait"), ms: z.number() }),
   z.object({ action: z.literal("done"), summary: z.string() }),
@@ -97,7 +98,7 @@ Allowed actions ONLY on this turn:
 {"action":"wait","ms":500}
 {"action":"done","summary":"..."}
 
-You CANNOT use click_xy, type, or scroll until a screenshot has been sent (respond with see first).
+You CANNOT use click_xy, type, press_enter, or scroll until a screenshot has been sent (respond with see first).
 
 After the first screenshot is ever sent to you, future turns already include screenshots — you never need {"action":"see"} again those will be logged and ignored.`;
 
@@ -113,6 +114,7 @@ The JSON must use exactly one of these shapes:
 {"action":"navigate","url":"https://..."}
 {"action":"click_xy","x":0,"y":0}
 {"action":"type","text":"..."}
+{"action":"press_enter"}
 {"action":"scroll","deltaY":0}
 {"action":"wait","ms":500}
 {"action":"done","summary":"..."}
@@ -125,6 +127,8 @@ click_xy: x,y are pixel coords on THIS screenshot image (origin top-left), withi
 
 Other rules:
 - Prefer click_xy on visible controls; click inputs before type.
+- press_enter sends Enter to the focused control (submit search, activate default button). Use after typing a query or focusing the right field.
+- Never use the Blueberry home page for searching , always use {"action":"navigate","url":"https://..."} instead directly
 - navigate uses full https URLs where possible.
 - scroll: positive deltaY scrolls down.
 - wait after navigations as needed for load.`;
@@ -132,7 +136,7 @@ Other rules:
 const COERCE_SYSTEM = `Turn the assistant draft into exactly ONE valid JSON object. Output ONLY that JSON — no prose, markdown, XML, or tool tags.
 
 Strict JSON only. Allowed action values combine blind + vision sets:
-see | new_tab (optional url) | navigate | click_xy | type | scroll | wait | done`;
+see | new_tab (optional url) | navigate | click_xy | type | press_enter | scroll | wait | done`;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -140,6 +144,39 @@ function sleep(ms: number): Promise<void> {
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
+}
+
+/** Injected into the tab so React controlled inputs update (plain el.value breaks React state). */
+function buildTypeIntoActiveElementScript(appendText: string): string {
+  const lit = JSON.stringify(appendText);
+  return `(function(){
+  var t = ${lit};
+  var el = document.activeElement;
+  if (!el) return "no_focus";
+  if (el.isContentEditable) {
+    document.execCommand("insertText", false, t);
+    return "contenteditable";
+  }
+  var tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") {
+    var proto = tag === "INPUT" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+    var desc = Object.getOwnPropertyDescriptor(proto, "value");
+    if (desc && desc.set && desc.get) {
+      desc.set.call(el, desc.get.call(el) + t);
+    } else {
+      el.value = (el.value || "") + t;
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return "input";
+  }
+  if ("value" in el && typeof el.value === "string") {
+    el.value += t;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return "input_fallback";
+  }
+  return "unsupported";
+})()`;
 }
 
 type VisionDims = { shotW: number; shotH: number; viewW: number; viewH: number };
@@ -418,6 +455,7 @@ export class AgentRunner {
           !visionFromNow &&
           (action.action === "click_xy" ||
             action.action === "type" ||
+            action.action === "press_enter" ||
             action.action === "scroll")
         ) {
           emit({
@@ -428,7 +466,7 @@ export class AgentRunner {
           emit({
             type: "error",
             message:
-              "blind_turn: use {\"action\":\"see\"} once before click_xy, type, or scroll.",
+              "blind_turn: use {\"action\":\"see\"} once before click_xy, type, press_enter, or scroll.",
           });
           return;
         }
@@ -536,22 +574,12 @@ async function executeStep(
       tab.clickAtCss(xCss, yCss);
       return;
     }
+    case "press_enter":
+      tab.pressEnter();
+      emit({ type: "log", message: "[agent] press Enter" });
+      return;
     case "type":
-      await tab.runJs(`(function(){
-          var t = ${JSON.stringify(action.text)};
-          var el = document.activeElement;
-          if (!el) return "no_focus";
-          if (el.isContentEditable) {
-            document.execCommand("insertText", false, t);
-            return "contenteditable";
-          }
-          if ("value" in el && typeof el.value === "string") {
-            el.value += t;
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            return "input";
-          }
-          return "unsupported";
-        })()`);
+      await tab.runJs(buildTypeIntoActiveElementScript(action.text));
       return;
     case "scroll": {
       await tab.runJs(`void window.scrollBy(0, ${Number(action.deltaY)});`);

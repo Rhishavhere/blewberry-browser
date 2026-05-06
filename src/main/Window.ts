@@ -197,6 +197,18 @@ export class Window {
     this._baseWindow.focus();
   }
 
+  /**
+   * Focus the OS window and the active tab's web contents.
+   * Use after automation so clicks/keys hit the page (not a stuck sidebar focus).
+   */
+  focusActiveTabContents(): void {
+    this._baseWindow.focus();
+    const tab = this.activeTab;
+    if (tab) {
+      tab.webContents.focus();
+    }
+  }
+
   minimize(): void {
     this._baseWindow.minimize();
   }

@@ -33,6 +33,7 @@ type AgentStepAction =
   | { action: "navigate"; url: string }
   | { action: "click_xy"; x: number; y: number }
   | { action: "type"; text: string }
+  | { action: "press_enter" }
   | { action: "scroll"; deltaY: number }
   | { action: "wait"; ms: number }
   | { action: "done"; summary: string };
