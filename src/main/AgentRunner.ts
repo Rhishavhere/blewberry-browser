@@ -1,4 +1,4 @@
-import { generateObject, type LanguageModel } from "ai";
+import { generateText, type LanguageModel } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
@@ -29,28 +29,120 @@ export type AgentEvent =
   | { type: "error"; message: string }
   | { type: "finished"; reason: string };
 
-const SYSTEM = `You are a browser automation agent. Each turn you receive a fresh screenshot of the active tab and a user goal.
+const SYSTEM = `You control a browser from screenshots.
 
-You must output exactly one structured action (the response schema enforces this).
+STRICT OUTPUT (non-negotiable):
+- Respond with NOTHING except one JSON object. No English before or after it.
+- No markdown. No XML. No tags like function_calls or invoke. Never use the character sequence "<".
+- First character of your reply must be "{". Last character must be "}".
 
-click_xy coordinates:
-- Use pixel coordinates in the SAME space as the screenshot image: origin top-left, x right, y down.
-- Stay within the image bounds given in the user message.
+The JSON must use exactly one of these shapes:
 
-Guidelines:
-- Prefer click_xy on visible interactive elements.
-- navigate: use full https:// URLs when opening a new site.
-- type: types into the currently focused element (click an input first).
-- scroll: deltaY is CSS pixels (positive scrolls down).
-- wait: milliseconds to allow network/DOM updates (e.g. after navigate).
-- When the goal is achieved, respond with done and a short summary.`;
+{"action":"navigate","url":"https://..."}
+{"action":"click_xy","x":0,"y":0}
+{"action":"type","text":"..."}
+{"action":"scroll","deltaY":0}
+{"action":"wait","ms":500}
+{"action":"done","summary":"..."}
 
+click_xy: x,y are pixel coordinates on the SAME screenshot image (origin top-left). Stay within bounds given in the user message.
+
+Other rules:
+- Prefer click_xy on visible controls. Click an input before type.
+- navigate uses full https URLs.
+- scroll deltaY is CSS pixels down (positive scrolls down).
+- wait lets the page settle after navigations.
+`;
+
+const COERCE_SYSTEM = `Turn the assistant draft into exactly ONE valid JSON object. Output ONLY that JSON — no prose, markdown, XML, or tool tags.
+
+Allowed shapes only:
+{"action":"navigate","url":"https://..."}
+{"action":"click_xy","x":0,"y":0}
+{"action":"type","text":"..."}
+{"action":"scroll","deltaY":0}
+{"action":"wait","ms":500}
+{"action":"done","summary":"..."}
+
+Infer missing numbers from coordinates mentioned in text if possible; otherwise use click_xy centered on plausible UI targets only if coords appear; if impossible, respond {"action":"wait","ms":1200}`;
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
+}
+
+/** Plain-text JSON parse — avoids Anthropic structured-output tools (broken for our Zod discriminatedUnion). */
+function parseAgentStepJson(raw: string): AgentStep {
+  let t = raw.trim();
+  const fence =
+    /^```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```$/m.exec(t) ??
+    /```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```/m.exec(t);
+  if (fence) t = fence[1].trim();
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error(`no_json_object_in_model_output: ${raw.slice(0, 200)}`);
+  }
+  let jsonSlice = t.slice(start, end + 1);
+  jsonSlice = jsonSlice.replace(/,\s*([}\]])/g, "$1");
+  let obj: unknown;
+  try {
+    obj = JSON.parse(jsonSlice) as unknown;
+  } catch {
+    throw new Error(`json_parse_failed: ${jsonSlice.slice(0, 240)}`);
+  }
+  const parsed = AgentStepSchema.safeParse(obj);
+  if (!parsed.success) {
+    throw new Error(`schema_mismatch: ${parsed.error.message}`);
+  }
+  return parsed.data;
+}
+
+async function parseOrRepairAgentStep(
+  visionText: string,
+  model: LanguageModel,
+  signal: AbortSignal,
+  emit: (event: AgentEvent) => void
+): Promise<AgentStep> {
+  try {
+    return parseAgentStepJson(visionText);
+  } catch (e1) {
+    emit({
+      type: "log",
+      message: `[repair] Vision reply was not pure JSON (${String(e1).slice(0, 240)}…) — coercion pass`,
+    });
+  }
+
+  const draft = visionText.trim().slice(0, 12_000);
+  const { text } = await generateText({
+    model,
+    system: COERCE_SYSTEM,
+    abortSignal: signal,
+    maxRetries: 1,
+    temperature: 0,
+    maxOutputTokens: 384,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `Convert this assistant draft into one JSON action object:\n\n${draft}`,
+          },
+        ],
+      },
+    ],
+  });
+
+  try {
+    return parseAgentStepJson(text);
+  } catch (e2) {
+    throw new Error(
+      `json_coercion_failed_after_vision_and_repair: ${String(e2)} ; vision_snippet=${visionText.slice(0, 120)}`
+    );
+  }
 }
 
 function getAgentLanguageModel(): LanguageModel | null {
@@ -125,9 +217,9 @@ export class AgentRunner {
           const size = native.getSize();
           shotW = size.width;
           shotH = size.height;
-          const vp = await tab.runJs(
-            "return [window.innerWidth, window.innerHeight]"
-          ) as [number, number];
+          const vp = (await tab.runJs(
+            "(() => [window.innerWidth, window.innerHeight])()"
+          )) as [number, number];
           viewW = vp[0];
           viewH = vp[1];
         } catch (e) {
@@ -140,28 +232,30 @@ export class AgentRunner {
             ? `Recent actions:\n${historyLines.slice(-8).join("\n")}`
             : "";
 
-        const ctxText = [
-          `Goal: ${goal}`,
-          `Step ${step + 1} of ${maxSteps}.`,
-          `Page URL: ${tab.url}`,
-          `Page title: ${tab.title}`,
-          `Screenshot pixel size: ${shotW}x${shotH}`,
-          `Viewport CSS: ${viewW}x${viewH}`,
-          `click_xy must use screenshot pixel coordinates within [0, ${shotW - 1}] x [0, ${shotH - 1}].`,
-          recent,
-        ]
-          .filter(Boolean)
-          .join("\n\n");
+        const ctxText =
+          `[JSON-only reminder: Reply must start with { and contain no other text.]\n\n` +
+          [
+            `Goal: ${goal}`,
+            `Step ${step + 1} of ${maxSteps}.`,
+            `Page URL: ${tab.url}`,
+            `Page title: ${tab.title}`,
+            `Screenshot pixel size: ${shotW}x${shotH}`,
+            `Viewport CSS: ${viewW}x${viewH}`,
+            `click_xy must use screenshot pixel coordinates within [0, ${shotW - 1}] x [0, ${shotH - 1}].`,
+            recent,
+          ]
+            .filter(Boolean)
+            .join("\n\n");
 
         let action: AgentStep;
         try {
-          const { object } = await generateObject({
+          const { text } = await generateText({
             model,
-            schema: AgentStepSchema,
             system: SYSTEM,
             abortSignal: signal,
             maxRetries: 1,
-            temperature: 0.2,
+            temperature: 0,
+            maxOutputTokens: 512,
             messages: [
               {
                 role: "user",
@@ -172,7 +266,7 @@ export class AgentRunner {
               },
             ],
           });
-          action = object;
+          action = await parseOrRepairAgentStep(text, model, signal, emit);
         } catch (e) {
           emit({ type: "error", message: `llm_error: ${String(e)}` });
           return;
@@ -241,7 +335,7 @@ async function executeStep(
         })()`);
       return;
     case "scroll":
-      await tab.runJs(`window.scrollBy(0, ${Number(action.deltaY)});`);
+      await tab.runJs(`void window.scrollBy(0, ${Number(action.deltaY)});`);
       return;
     case "wait":
       await sleep(Math.min(15_000, Math.max(0, action.ms)));
