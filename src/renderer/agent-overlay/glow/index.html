@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title></title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent !important;
+      }
+      .frame {
+        box-sizing: border-box;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        box-shadow:
+          inset 0 0 0 2px rgba(251, 146, 60, 0.72),
+          inset 0 0 120px rgba(251, 191, 36, 0.12);
+        animation: bb-glow 2.5s ease-in-out infinite alternate;
+      }
+      @keyframes bb-glow {
+        from {
+          opacity: 0.9;
+          filter: brightness(0.98);
+        }
+        to {
+          opacity: 1;
+          filter: brightness(1.06);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame" aria-hidden="true"></div>
+  </body>
+</html>

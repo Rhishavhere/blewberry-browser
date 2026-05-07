@@ -246,6 +246,8 @@ export class EventManager {
         this.agentRunner.stop();
         const sidebarWc = this.mainWindow.sidebar.view.webContents;
 
+        this.mainWindow.setAgentOverlayActive(true);
+
         void this.agentRunner
           .run({
             goal,
@@ -262,6 +264,7 @@ export class EventManager {
             emit: (event) => sidebarWc.send("agent-event", event),
           })
           .finally(() => {
+            this.mainWindow.setAgentOverlayActive(false);
             this.mainWindow.focusActiveTabContents();
           });
 
@@ -271,6 +274,7 @@ export class EventManager {
 
     ipcMain.handle("agent-stop", () => {
       this.agentRunner.stop();
+      this.mainWindow.setAgentOverlayActive(false);
       this.mainWindow.focusActiveTabContents();
       return true;
     });
@@ -299,32 +303,31 @@ export class EventManager {
       };
     });
 
-    ipcMain.handle(
-      "agent-report-save-as",
-      async (event, id: string) => {
-        if (!isReportPageUrl(event.sender.getURL())) {
-          return { ok: false as const, error: "bad_context" };
-        }
-        const safe = String(id ?? "").trim();
-        if (!/^[0-9a-f-]{36}$/i.test(safe)) {
-          return { ok: false as const, error: "bad_id" };
-        }
-        const data = await loadAgentReport(safe);
-        if (!data) return { ok: false as const, error: "not_found" };
-        const safeName =
-          data.title.replace(/[<>:"/\\|?*]/g, "_").trim().slice(0, 80) ||
-          "report";
-        const result = await dialog.showSaveDialog(this.mainWindow.window, {
-          defaultPath: `${safeName}.md`,
-          filters: [{ name: "Markdown", extensions: ["md"] }],
-        });
-        if (result.canceled || !result.filePath) {
-          return { ok: false as const, error: "cancelled" };
-        }
-        await writeFile(result.filePath, data.markdown, "utf-8");
-        return { ok: true as const, path: result.filePath };
-      },
-    );
+    ipcMain.handle("agent-report-save-as", async (event, id: string) => {
+      if (!isReportPageUrl(event.sender.getURL())) {
+        return { ok: false as const, error: "bad_context" };
+      }
+      const safe = String(id ?? "").trim();
+      if (!/^[0-9a-f-]{36}$/i.test(safe)) {
+        return { ok: false as const, error: "bad_id" };
+      }
+      const data = await loadAgentReport(safe);
+      if (!data) return { ok: false as const, error: "not_found" };
+      const safeName =
+        data.title
+          .replace(/[<>:"/\\|?*]/g, "_")
+          .trim()
+          .slice(0, 80) || "report";
+      const result = await dialog.showSaveDialog(this.mainWindow.window, {
+        defaultPath: `${safeName}.md`,
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      });
+      if (result.canceled || !result.filePath) {
+        return { ok: false as const, error: "cancelled" };
+      }
+      await writeFile(result.filePath, data.markdown, "utf-8");
+      return { ok: true as const, path: result.filePath };
+    });
 
     ipcMain.handle(
       "agent-report-gmail",

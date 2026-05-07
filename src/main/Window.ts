@@ -1,5 +1,6 @@
 import { BaseWindow, shell } from "electron";
 import { join } from "path";
+import { AgentChromeOverlay } from "./AgentChromeOverlay";
 import { Tab } from "./Tab";
 import { TopBar } from "./TopBar";
 import { SideBar } from "./SideBar";
@@ -11,6 +12,7 @@ export class Window {
   private tabCounter: number = 0;
   private _topBar: TopBar;
   private _sideBar: SideBar;
+  private readonly _agentChrome: AgentChromeOverlay;
 
   private getWindowIconPath(): string | undefined {
     // Use ico on Windows; keep undefined on other platforms.
@@ -43,7 +45,11 @@ export class Window {
     // Set the window reference on the LLM client to avoid circular dependency
     this._sideBar.client.setWindow(this);
 
-    // Create the first tab
+    this._agentChrome = new AgentChromeOverlay(this._baseWindow, () =>
+      this._sideBar.getIsVisible() ? 400 : 0,
+    );
+
+    // Create the first tab (overlay already attached; tabs stay below until raised)
     this.createTab();
 
     // Set up window resize handler
@@ -144,7 +150,13 @@ export class Window {
       tab.hide();
     }
 
+    this._agentChrome.raiseAboveTabs();
     return tab;
+  }
+
+  /** Glow + bottom chrome while the autonomous agent drives the active tab. */
+  setAgentOverlayActive(active: boolean): void {
+    this._agentChrome.setActive(active);
   }
 
   closeTab(tabId: string): boolean {
@@ -283,6 +295,8 @@ export class Window {
         height: bounds.height - 88, // Subtract topbar height
       });
     });
+    this._agentChrome.updateLayout();
+    this._agentChrome.raiseAboveTabs();
   }
 
   // Public method to update all bounds when sidebar is toggled

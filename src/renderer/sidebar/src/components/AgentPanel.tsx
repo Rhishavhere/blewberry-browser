@@ -426,8 +426,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({
                 )}
                 {reportLinks.length > 0 && (
                   <div className="space-y-2 pt-1 border-border/50">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Full reports
+                    <p className="text-xs font-semibold tracking-wide text-muted-foreground">
+                      Full Report
                     </p>
                     <ul className="space-y-2">
                       {reportLinks.map((r) => (

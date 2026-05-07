@@ -14,6 +14,7 @@ export default defineConfig({
           topbar: resolve(__dirname, "src/preload/topbar.ts"),
           sidebar: resolve(__dirname, "src/preload/sidebar.ts"),
           home: resolve(__dirname, "src/preload/home.ts"),
+          agentOverlay: resolve(__dirname, "src/preload/agentOverlay.ts"),
         },
       },
     },
@@ -29,6 +30,14 @@ export default defineConfig({
           sidebar: resolve(__dirname, "src/renderer/sidebar/index.html"),
           home: resolve(__dirname, "src/renderer/home/index.html"),
           report: resolve(__dirname, "src/renderer/report/index.html"),
+          agentOverlayGlow: resolve(
+            __dirname,
+            "src/renderer/agent-overlay/glow/index.html",
+          ),
+          agentOverlayBar: resolve(
+            __dirname,
+            "src/renderer/agent-overlay/bar/index.html",
+          ),
         },
       },
     },
