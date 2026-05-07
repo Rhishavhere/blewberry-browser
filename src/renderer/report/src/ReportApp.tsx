@@ -355,7 +355,7 @@ export const ReportApp: React.FC = () => {
         <header
           className="fixed top-0 inset-x-0 z-30 transition-all duration-300"
           style={{
-            background: scrolled ? "rgba(255,255,255,0.94)" : "transparent",
+            background: scrolled ? "rgba(255,255,255,0.94)" : "rgba(255,255,255,0.94)",
             backdropFilter: scrolled ? "blur(12px)" : "none",
             borderBottom: scrolled ? "1px solid var(--border)" : "1px solid transparent",
             boxShadow: scrolled ? "0 1px 20px rgba(0,0,0,0.06)" : "none",
@@ -368,10 +368,10 @@ export const ReportApp: React.FC = () => {
                 alt=""
                 width={28}
                 height={28}
-                className="size-7 shrink-0 rounded-lg object-cover shadow-sm ring-1 ring-black/8"
+                className="size-7 shrink-0 rounded-lg object-cover shadow-sm"
               />
-              <span className="truncate text-[0.9rem] font-bold tracking-tight" style={{ color: "var(--ink)", fontFamily: "Georgia, serif" }}>
-                Blueberry
+              <span className="truncate text-[1rem] text-black/60 font-bold tracking-tight" >
+                Here's what I found
               </span>
             </div>
 
@@ -431,7 +431,7 @@ export const ReportApp: React.FC = () => {
         </div> */}
 
         {/* ── Body: TOC + Article ── */}
-        <div className="mx-auto max-w-7xl px-5 sm:px-8 py-12 lg:py-16">
+        <div className="mx-auto max-w-7xl px-5 mt-36">
           <div className="flex gap-12 xl:gap-16">
 
             {/* Sidebar TOC */}

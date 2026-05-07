@@ -141,10 +141,13 @@ export const MiniApp: React.FC = () => {
     <div className="flex flex-col w-full h-screen items-center app-region-no-drag">
       
       {/* Pill Container (Dock) */}
-      <form onSubmit={handleSearch} className="flex w-[400px] h-[48px] items-center justify-center bg-white dark:bg-black/60 rounded-full px-6 app-region-drag">
+      <form 
+        onSubmit={handleSearch} 
+        className="flex w-[400px] h-[42px] items-center justify-center bg-white dark:bg-black/60 rounded-full px-6 app-region-drag"
+      >
         
         {/* Blueberry Logo */}
-        <div className="flex items-center justify-center mr-3 w-5 h-5 flex-shrink-0 opacity-80">
+        <div id='dock-logo' className="flex items-center justify-center mr-3 w-5 h-5 flex-shrink-0 opacity-80 app-region-drag">
           <img src="/icon.svg" alt="Logo" className="w-full h-full object-contain pointer-events-none" onError={(e) => {
               (e.target as HTMLImageElement).src = '/icon.png';
           }} />
@@ -157,7 +160,7 @@ export const MiniApp: React.FC = () => {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={isAgentMode ? "Research a topic..." : "Search"}
-          className="flex-1 bg-transparent border-none outline-none text-md text-gray-800 dark:text-gray-100 placeholder:text-gray-400 app-region-no-drag font-medium"
+          className="flex-1 bg-transparent border-none outline-none text-md font-medium text-gray-600 dark:text-gray-100 placeholder:text-gray-400 app-region-no-drag"
           autoComplete="off"
           spellCheck={false}
         />
@@ -221,19 +224,25 @@ export const MiniApp: React.FC = () => {
 
       {/* Agent Low Expanded View (Working or Conclusion) */}
       {isExpanded && isAgentMode && !showFullReport && (
-        <div className="w-[500px] min-h-[140px] max-h-[280px] mt-4 bg-white dark:bg-black/80 rounded-2xl shadow-xl border border-gray-200 dark:border-white/10 flex flex-col overflow-hidden p-4">
+        <div className="w-[500px] min-h-[120px] max-h-[220px] mt-4 bg-white dark:bg-black/80 rounded-2xl shadow-xl border border-gray-200 dark:border-white/10 flex flex-col overflow-hidden p-4">
           {agentPhase === 'working' ? (
             <>
               <div className="flex items-center gap-2 mb-2">
                 <Sparkle className="w-5 h-5 text-blue-500 animate-pulse" />
-                <span className="font-semibold text-gray-800 dark:text-gray-200">Agent is researching...</span>
+                <span className="font-semibold text-gray-800 dark:text-gray-200">Agents are on the case..</span>
               </div>
-              <div className="flex-1 overflow-y-auto text-xs text-gray-500 dark:text-gray-400 font-mono flex flex-col gap-1 pr-2">
+              <ul className="flex-1 overflow-y-auto py-2 pl-2">
                 {agentLogs.map((log, i) => (
-                  <div key={i}>{log}</div>
+                  <li
+                    key={i}
+                    className="flex items-center gap-3 px-10 py-2 text-sm leading-snug"
+                  >
+                    <div className="w-2 h-2 rounded-full bg-gray-400 shrink-0"></div>
+                    <span className="text-gray-500 font-medium">{log}</span>
+                  </li>
                 ))}
                 <div ref={logsEndRef} />
-              </div>
+              </ul>
             </>
           ) : (
             <div className="flex flex-col h-full justify-between">

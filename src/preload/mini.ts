@@ -17,7 +17,7 @@ const miniAPI = {
   },
   getHomePreloadPath: () => {
     return pathToFileURL(join(__dirname, "home.js")).href;
-  }
+  },
 };
 
 const reportAPI = {

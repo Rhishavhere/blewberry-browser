@@ -55,8 +55,8 @@ async function writeUserConclusion(args: {
   try {
     const { text } = await generateText({
       model,
-      system: `Write a concise conclusion for someone who delegated a browsing task.
-2-3 sentences, friendly and clear. Mention what happened, whether the stated goal appears satisfied, any notable page or search results, and what the user might do next when relevant.
+      system: `Write a really concise conclusion for someone who delegated a browsing task.
+1-2 sentences, friendly and clear. Mention what happened, whether the stated goal appears satisfied, any notable page or search results, and what the user might do next when relevant.
 
 Rules: casual language only — no JSON, no XML tags, no bullet lists framed as markdown if you can avoid them. Do not apologize excessively.`,
       temperature: 0.35,

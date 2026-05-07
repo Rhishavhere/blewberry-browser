@@ -94,7 +94,6 @@ export class MiniWindow {
 
   public hide(): void {
     this.baseWindow.hide();
-    this.collapse(); // always collapse when hiding
   }
 
   public expandLow(): void {
@@ -131,6 +130,14 @@ export class MiniWindow {
     });
 
     this.updateBounds();
+  }
+
+  public get window(): BaseWindow {
+    return this.baseWindow;
+  }
+
+  public get view(): WebContentsView {
+    return this.uiView;
   }
 
   public get isWindowExpanded(): boolean {
