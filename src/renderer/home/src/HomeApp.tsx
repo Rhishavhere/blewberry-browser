@@ -12,7 +12,7 @@ function queryToNavigateUrl(raw: string): string {
   const dotted = /\.[a-z]{2,}([/:?#]|$)/i.test(q);
   if (dotted && !q.includes(" "))
     return q.startsWith("http") ? q : `https://${q}`;
-  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=en`;
 }
 
 const ModePill: React.FC<{

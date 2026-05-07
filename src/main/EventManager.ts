@@ -14,6 +14,7 @@ export class EventManager {
   private mainWindow: Window;
   private miniWindow: MiniWindow;
   private agentRunner = new AgentRunner();
+  private currentHeadlessAgent: HeadlessAgent | null = null;
 
   constructor(mainWindow: Window, miniWindow: MiniWindow) {
     this.mainWindow = mainWindow;
@@ -483,7 +484,8 @@ export class EventManager {
     ipcMain.handle("headless-agent-start", async (event, goal: string) => {
       this.miniWindow.expandLow();
       const headlessTab = new Tab("headless-" + Date.now(), "about:blank");
-      const agent = new HeadlessAgent();
+      this.currentHeadlessAgent = new HeadlessAgent();
+      const agent = this.currentHeadlessAgent;
       const sender = event.sender;
       
       agent.run({
@@ -494,7 +496,18 @@ export class EventManager {
         }
       }).finally(() => {
         headlessTab.destroy();
+        if (this.currentHeadlessAgent === agent) {
+          this.currentHeadlessAgent = null;
+        }
       });
+      return true;
+    });
+
+    ipcMain.handle("headless-agent-stop", () => {
+      if (this.currentHeadlessAgent) {
+        this.currentHeadlessAgent.stop();
+        this.currentHeadlessAgent = null;
+      }
       return true;
     });
 

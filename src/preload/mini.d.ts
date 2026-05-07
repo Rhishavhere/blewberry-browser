@@ -8,6 +8,7 @@ interface MiniAPI {
   collapse: () => Promise<boolean>;
   expandFull: () => Promise<boolean>;
   startHeadlessAgent: (goal: string) => Promise<boolean>;
+  stopHeadlessAgent: () => Promise<boolean>;
   onAgentEvent: (callback: (event: any) => void) => () => void;
   getHomePreloadPath: () => string;
 }

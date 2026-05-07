@@ -33,7 +33,7 @@ export const AddressBar: React.FC = () => {
                 finalUrl = `https://${finalUrl}`
             } else {
                 // Treat as search query
-                finalUrl = `https://www.google.com/search?q=${encodeURIComponent(finalUrl)}`
+                finalUrl = `https://www.google.com/search?q=${encodeURIComponent(finalUrl)}&hl=en`
             }
         }
 

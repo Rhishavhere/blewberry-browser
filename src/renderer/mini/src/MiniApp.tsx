@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Maximize2, Sparkle } from 'lucide-react'
+import { X, Maximize2, Sparkle, Square } from 'lucide-react'
 import { MiniReport } from './MiniReport'
 
 export const MiniApp: React.FC = () => {
@@ -100,7 +100,7 @@ export const MiniApp: React.FC = () => {
         if (finalUrl.includes('.') && !finalUrl.includes(' ')) {
             finalUrl = `https://${finalUrl}`
         } else {
-            finalUrl = `https://www.google.com/search?q=${encodeURIComponent(finalUrl)}`
+            finalUrl = `https://www.google.com/search?q=${encodeURIComponent(finalUrl)}&hl=en`
         }
     }
     
@@ -137,6 +137,14 @@ export const MiniApp: React.FC = () => {
     if (window.miniAPI) window.miniAPI.expandFull()
   }
 
+  const handleStopAgent = () => {
+    if (window.miniAPI) {
+      window.miniAPI.stopHeadlessAgent();
+      setAgentPhase('done');
+      setAgentLogs(prev => [...prev, "[User] Agent stopped manually."]);
+    }
+  }
+
   return (
     <div className="flex flex-col w-full h-screen items-center app-region-no-drag">
       
@@ -167,14 +175,25 @@ export const MiniApp: React.FC = () => {
 
         {/* Actions */}
         <div className="flex items-center ml-2 gap-1 flex-shrink-0 app-region-no-drag">
-          <button 
-              type="button"
-              onClick={() => setIsAgentMode(!isAgentMode)}
-              title="Toggle Agent Mode"
-              className={`w-7 h-7 rounded-full transition-colors focus:outline-none flex items-center justify-center ${isAgentMode ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400' : 'hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
-          >
-              <Sparkle className="w-4 h-4" />
-          </button>
+          {isAgentMode && agentPhase === 'working' ? (
+            <button 
+                type="button"
+                onClick={handleStopAgent}
+                title="Stop Agent"
+                className="w-7 h-7 rounded-full bg-red-100 text-red-500 dark:bg-red-900/40 dark:text-red-400 hover:bg-red-200/40 dark:hover:bg-red-900/60 transition-colors focus:outline-none flex items-center justify-center"
+            >
+                <Square className="w-2 h-2" />
+            </button>
+          ) : (
+            <button 
+                type="button"
+                onClick={() => setIsAgentMode(!isAgentMode)}
+                title="Toggle Agent Mode"
+                className={`w-7 h-7 rounded-full transition-colors focus:outline-none flex items-center justify-center ${isAgentMode ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400' : 'hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+            >
+                <Sparkle className="w-4 h-4" />
+            </button>
+          )}
           <button 
               type="button"
               onClick={handleExpandToMain}

@@ -23,6 +23,14 @@ app.whenReady().then(() => {
 
   mainWindow = createWindow();
 
+  // The miniWindow stays alive in the background, which prevents 'window-all-closed'
+  // from firing. We should explicitly quit the app when the main window is closed.
+  mainWindow.window.on("closed", () => {
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  });
+
   app.on("activate", () => {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.

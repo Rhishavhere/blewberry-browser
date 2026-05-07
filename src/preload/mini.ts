@@ -11,6 +11,7 @@ const miniAPI = {
   collapse: () => electronAPI.ipcRenderer.invoke("mini-collapse"),
   expandFull: () => electronAPI.ipcRenderer.invoke("mini-expand-full"),
   startHeadlessAgent: (goal: string) => electronAPI.ipcRenderer.invoke("headless-agent-start", goal),
+  stopHeadlessAgent: () => electronAPI.ipcRenderer.invoke("headless-agent-stop"),
   onAgentEvent: (callback: (event: any) => void) => {
     electronAPI.ipcRenderer.on("headless-agent-event", (_, event) => callback(event));
     return () => electronAPI.ipcRenderer.removeAllListeners("headless-agent-event");
