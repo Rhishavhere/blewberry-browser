@@ -1,6 +1,5 @@
 import type { Tab } from "../Tab";
 import type { AgentEvent, AgentStep } from "./agentSchema";
-import { saveAgentReport } from "./agentReportStorage";
 
 export type VisionDims = {
   shotW: number;
@@ -9,12 +8,41 @@ export type VisionDims = {
   viewH: number;
 };
 
+/** Plain text from last read_page on this URL (for save_report reuse). */
+export type LastReadCapture = {
+  url: string;
+  title: string;
+  body: string;
+};
+
+export type AgentStepExecutionContext = {
+  lastReadCapture: LastReadCapture | null;
+};
+
+export type ExecuteStepResult = {
+  injectOncePageSnapshot?: string;
+  /** After read_page — replace runner's lastReadCapture. */
+  lastReadCapture?: LastReadCapture | null;
+  /** After save_report — append to runner's report segments. */
+  savedReportSegment?: { url: string; title: string; body: string };
+};
+
+const MAX_SEGMENT_CHARS = 120_000;
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
+}
+
+function capBody(s: string): string {
+  if (s.length <= MAX_SEGMENT_CHARS) return s;
+  return (
+    s.slice(0, MAX_SEGMENT_CHARS) +
+    `\n\n_[Truncated at ${MAX_SEGMENT_CHARS} characters]_\n`
+  );
 }
 
 /** Injected into the tab so React controlled inputs update (plain el.value breaks React state). */
@@ -50,16 +78,13 @@ export function buildTypeIntoActiveElementScript(appendText: string): string {
 })()`;
 }
 
-export type ExecuteStepResult = {
-  injectOncePageSnapshot?: string;
-};
-
 export async function executeAgentStep(
   tab: Tab,
   action: AgentStep,
   dims: VisionDims | null,
   createTabAndActivate: (url?: string) => Tab,
   emit: (event: AgentEvent) => void,
+  ctx: AgentStepExecutionContext,
 ): Promise<ExecuteStepResult | void> {
   switch (action.action) {
     case "see":
@@ -82,26 +107,45 @@ export async function executeAgentStep(
         type: "log",
         message: `[agent] read_page: innerText length ${text.length}`,
       });
-      return { injectOncePageSnapshot: blob };
+      return {
+        injectOncePageSnapshot: blob,
+        lastReadCapture: {
+          url: tab.url,
+          title: tab.title,
+          body: inner,
+        },
+      };
     }
-    case "publish_report": {
-      const { id, viewerUrl } = await saveAgentReport({
-        title: action.title ?? "",
-        markdown: action.markdown,
-      });
-      const displayTitle =
-        (action.title ?? "").trim().slice(0, 200) || "Research report";
-      emit({
-        type: "report",
-        id,
-        title: displayTitle,
-        url: viewerUrl,
-      });
+    case "save_report": {
+      const url = tab.url;
+      const title = tab.title;
+      let body: string;
+      let reused = false;
+      if (
+        ctx.lastReadCapture &&
+        ctx.lastReadCapture.url === url &&
+        ctx.lastReadCapture.body.length > 0
+      ) {
+        body = ctx.lastReadCapture.body;
+        reused = true;
+      } else {
+        body = await tab.getTabText();
+      }
+      if (action.includeHtml) {
+        const htmlCap = 50_000;
+        const html = await tab.getTabHtml();
+        body += `\n\n---\nouterHTML (truncated):\n${html.slice(0, htmlCap)}${
+          html.length > htmlCap ? "\n...[truncated]" : ""
+        }`;
+      }
+      body = capBody(body);
       emit({
         type: "log",
-        message: `[agent] publish_report saved (${id}) — user can open from the sidebar.`,
+        message: `[agent] save_report: ${reused ? "reused last read_page text" : "captured fresh tab text"} → ${body.length} chars for reporting agent`,
       });
-      return;
+      return {
+        savedReportSegment: { url, title, body },
+      };
     }
     case "new_tab": {
       const u = action.url?.trim();

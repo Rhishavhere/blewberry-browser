@@ -21,9 +21,8 @@ export const AgentStepSchema = z.discriminatedUnion("action", [
     includeHtml: z.boolean().optional(),
   }),
   z.object({
-    action: z.literal("publish_report"),
-    title: z.string().optional(),
-    markdown: z.string(),
+    action: z.literal("save_report"),
+    includeHtml: z.boolean().optional(),
   }),
   z.object({ action: z.literal("done"), summary: z.string() }),
 ]);
@@ -36,7 +35,9 @@ export type AgentEvent =
   | { type: "conclusion"; text: string }
   | { type: "error"; message: string }
   | { type: "finished"; reason: string }
-  | { type: "report"; id: string; title: string; url: string };
+  | { type: "report"; id: string; title: string; url: string }
+  | { type: "report_generating" }
+  | { type: "report_error"; message: string };
 
 export function parseAgentStepJson(raw: string): AgentStep {
   let t = raw.trim();

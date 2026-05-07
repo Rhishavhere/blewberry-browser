@@ -18,6 +18,13 @@ interface SavedReportPayload {
 
 interface ReportAPI {
   loadReport: (id: string) => Promise<SavedReportPayload | null>;
+  saveReportAs: (
+    id: string,
+  ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  openGmailDraft: (
+    subject: string,
+    body: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 declare global {

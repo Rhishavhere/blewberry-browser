@@ -56,6 +56,15 @@ const reportAPI = {
       createdAt: string;
     } | null>;
   },
+  saveReportAs: (id: string) =>
+    ipcRenderer.invoke("agent-report-save-as", id) as Promise<
+      | { ok: true; path: string }
+      | { ok: false; error: string }
+    >,
+  openGmailDraft: (subject: string, body: string) =>
+    ipcRenderer.invoke("agent-report-gmail", { subject, body }) as Promise<
+      { ok: true } | { ok: false; error: string }
+    >,
 };
 
 if (process.contextIsolated) {

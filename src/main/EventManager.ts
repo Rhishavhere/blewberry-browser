@@ -1,4 +1,5 @@
-import { ipcMain, WebContents } from "electron";
+import { dialog, ipcMain, shell, WebContents } from "electron";
+import { writeFile } from "fs/promises";
 import type { Window } from "./Window";
 import { isHomePageUrl } from "./homePage";
 import { getReportViewerPageUrl, isReportPageUrl } from "./reportPage";
@@ -251,7 +252,7 @@ export class EventManager {
             maxSteps:
               typeof payload?.maxSteps === "number" && payload.maxSteps > 0
                 ? Math.min(payload.maxSteps, 60)
-                : 25,
+                : 60,
             getActiveTab: () => this.mainWindow.activeTab,
             createTabAndActivate: (url?: string) => {
               const t = this.mainWindow.createTab(url);
@@ -297,6 +298,47 @@ export class EventManager {
         title: data.title,
       };
     });
+
+    ipcMain.handle(
+      "agent-report-save-as",
+      async (event, id: string) => {
+        if (!isReportPageUrl(event.sender.getURL())) {
+          return { ok: false as const, error: "bad_context" };
+        }
+        const safe = String(id ?? "").trim();
+        if (!/^[0-9a-f-]{36}$/i.test(safe)) {
+          return { ok: false as const, error: "bad_id" };
+        }
+        const data = await loadAgentReport(safe);
+        if (!data) return { ok: false as const, error: "not_found" };
+        const safeName =
+          data.title.replace(/[<>:"/\\|?*]/g, "_").trim().slice(0, 80) ||
+          "report";
+        const result = await dialog.showSaveDialog(this.mainWindow.window, {
+          defaultPath: `${safeName}.md`,
+          filters: [{ name: "Markdown", extensions: ["md"] }],
+        });
+        if (result.canceled || !result.filePath) {
+          return { ok: false as const, error: "cancelled" };
+        }
+        await writeFile(result.filePath, data.markdown, "utf-8");
+        return { ok: true as const, path: result.filePath };
+      },
+    );
+
+    ipcMain.handle(
+      "agent-report-gmail",
+      async (event, payload: { subject: string; body: string }) => {
+        if (!isReportPageUrl(event.sender.getURL())) {
+          return { ok: false as const, error: "bad_context" };
+        }
+        const su = encodeURIComponent(payload.subject ?? "");
+        const body = encodeURIComponent((payload.body ?? "").slice(0, 2_000));
+        const url = `https://mail.google.com/mail/?view=cm&fs=1&su=${su}&body=${body}`;
+        await shell.openExternal(url);
+        return { ok: true as const };
+      },
+    );
   }
 
   private handlePageContentEvents(): void {

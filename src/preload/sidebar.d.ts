@@ -41,7 +41,7 @@ type AgentStepAction =
       maxChars?: number;
       includeHtml?: boolean;
     }
-  | { action: "publish_report"; title?: string; markdown: string }
+  | { action: "save_report"; includeHtml?: boolean }
   | { action: "done"; summary: string };
 
 type AgentEventPayload =
@@ -50,6 +50,8 @@ type AgentEventPayload =
   | { type: "conclusion"; text: string }
   | { type: "error"; message: string }
   | { type: "finished"; reason: string }
+  | { type: "report_generating" }
+  | { type: "report_error"; message: string }
   | { type: "report"; id: string; title: string; url: string };
 
 type HomeAgentRunPayload = {

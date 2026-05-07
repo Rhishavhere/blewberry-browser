@@ -24,6 +24,8 @@ type AgentEventPayload =
   | { type: "conclusion"; text: string }
   | { type: "error"; message: string }
   | { type: "finished"; reason: string }
+  | { type: "report_generating" }
+  | { type: "report_error"; message: string }
   | { type: "report"; id: string; title: string; url: string };
 
 type StepRow = { step: number; label: string; raw: string };
@@ -75,8 +77,8 @@ function humanizeStep(action: Record<string, unknown>): string {
         : "Waited for the page to settle";
     case "read_page":
       return "Read page text from the tab";
-    case "publish_report":
-      return "Saved a full markdown report";
+    case "save_report":
+      return "Saved page for the research report";
     case "done":
       return "Wrapped up the task";
     default:
@@ -103,6 +105,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({
   const [reportLinks, setReportLinks] = useState<
     Array<{ id: string; title: string; url: string }>
   >([]);
+  const [reportGenerating, setReportGenerating] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
   const [steps, setSteps] = useState<StepRow[]>([]);
   const [technicalLog, setTechnicalLog] = useState<string[]>([]);
   const [stepsExpanded, setStepsExpanded] = useState(false);
@@ -126,6 +130,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({
     setTechnicalLog([]);
     setConclusion(null);
     setReportLinks([]);
+    setReportGenerating(false);
+    setReportError(null);
     setRunHadError(false);
     setGoal(g);
     setStepsExpanded(false);
@@ -184,7 +190,15 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({
         setSteps((prev) => [...prev, { step: e.step, label, raw }]);
       } else if (e.type === "conclusion") {
         setConclusion(e.text.trim());
+      } else if (e.type === "report_generating") {
+        setReportGenerating(true);
+        setReportError(null);
+      } else if (e.type === "report_error") {
+        setReportGenerating(false);
+        setReportError(e.message);
       } else if (e.type === "report") {
+        setReportGenerating(false);
+        setReportError(null);
         setReportLinks((prev) => {
           if (prev.some((r) => r.id === e.id)) return prev;
           return [...prev, { id: e.id, title: e.title, url: e.url }];
@@ -225,6 +239,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({
     setTechnicalLog([]);
     setConclusion(null);
     setReportLinks([]);
+    setReportGenerating(false);
+    setReportError(null);
     setRunHadError(false);
     setGoal("");
     setComposer("");
@@ -289,7 +305,10 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({
                 )}
                 {idleStatusLabel}
               </span>
-              {(steps.length > 0 || conclusion || reportLinks.length > 0) && (
+              {(steps.length > 0 ||
+                conclusion ||
+                reportLinks.length > 0 ||
+                reportGenerating) && (
                 <Button
                   variant="ghost"
                   size="xs"
@@ -359,33 +378,51 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({
                 )}
               >
                 <div className="flex gap-2 items-center">
-                  {running ? (
-                    <Loader2 className="size-5 animate-spin text-violet-600 mt-0.5 shrink-0" />
-                  ) : runHadError ? (
+                  {runHadError ? (
                     <XCircle className="size-5 text-red-500 mt-0.5 shrink-0" />
+                  ) : running && conclusion === null ? (
+                    <Loader2 className="size-5 animate-spin text-violet-600 mt-0.5 shrink-0" />
                   ) : (
                     <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
                   )}
                   <div className="min-w-0">
                     <p className="font-semibold text-sm text-foreground">
-                      {running
-                        ? "On it…"
-                        : conclusion
-                          ? runHadError
-                            ? "Couldnt finish cleanly"
-                            : "All set!"
-                          : "Your summary will appear here"}
+                      {runHadError
+                        ? "Couldnt finish cleanly"
+                        : running && conclusion === null
+                          ? "On it…"
+                          : conclusion && reportGenerating
+                            ? "Writing report…"
+                            : conclusion
+                              ? "All set!"
+                              : "Your summary will appear here"}
                     </p>
                   </div>
                 </div>
               </div>
               <div className="p-4 space-y-4">
-                {running && (
+                {running && conclusion === null && (
                   <div className="space-y-2 animate-pulse">
                     <div className="h-3 bg-muted rounded w-5/6" />
                     <div className="h-3 bg-muted rounded w-full" />
                     <div className="h-3 bg-muted rounded w-4/6" />
                   </div>
+                )}
+                {conclusion && (
+                  <div className="text-sm font-sans leading-relaxed text-foreground whitespace-pre-wrap space-y-2">
+                    {conclusion.trim()}
+                  </div>
+                )}
+                {reportGenerating && (
+                  <div className="flex items-center gap-2 text-sm text-violet-700 dark:text-violet-300">
+                    <Loader2 className="size-4 animate-spin shrink-0" />
+                    Writing full research report…
+                  </div>
+                )}
+                {reportError && (
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    {reportError}
+                  </p>
                 )}
                 {reportLinks.length > 0 && (
                   <div className="space-y-2 pt-1 border-border/50">
@@ -413,11 +450,6 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({
                         </li>
                       ))}
                     </ul>
-                  </div>
-                )}
-                {!running && conclusion && (
-                  <div className="text-sm font-sans leading-relaxed text-foreground whitespace-pre-wrap space-y-2">
-                    {conclusion.trim()}
                   </div>
                 )}
               </div>
@@ -467,7 +499,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({
               </details>
             )}
 
-            {/* <details className="rounded-xl border border-dashed border-border/80 bg-muted/15">
+            <details className="rounded-xl border border-dashed border-border/80 bg-muted/15">
               <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Technical details
               </summary>
@@ -481,7 +513,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({
                 )}
                 <div ref={logEndRef} />
               </div>
-            </details> */}
+            </details>
           </>
         )}
       </div>

@@ -10,7 +10,13 @@ import {
   type AgentStep,
   parseOrRepairAgentStep,
 } from "./agent/agentSchema";
-import { executeAgentStep, type VisionDims } from "./agent/agentExecute";
+import {
+  executeAgentStep,
+  type LastReadCapture,
+  type VisionDims,
+} from "./agent/agentExecute";
+import { generateResearchReportMarkdown } from "./agent/reportWriter";
+import { saveAgentReport } from "./agent/agentReportStorage";
 
 dotenv.config({ path: join(__dirname, "../../.env") });
 
@@ -88,6 +94,48 @@ function getAgentLanguageModel(): LanguageModel | null {
   return openai(modelId);
 }
 
+type ReportSegmentStored = { url: string; title: string; body: string };
+
+async function runResearchReportPipeline(args: {
+  goal: string;
+  segments: ReportSegmentStored[];
+  historyLines: readonly string[];
+  emit: (event: AgentEvent) => void;
+  signal: AbortSignal;
+}): Promise<void> {
+  if (args.segments.length === 0 || args.signal.aborted) return;
+  args.emit({ type: "report_generating" });
+  try {
+    const segments = args.segments.map((s, i) => ({
+      index: i + 1,
+      url: s.url,
+      title: s.title,
+      body: s.body,
+    }));
+    const { markdown, title } = await generateResearchReportMarkdown({
+      goal: args.goal,
+      segments,
+      historyLines: args.historyLines,
+      signal: args.signal,
+    });
+    const { id, viewerUrl } = await saveAgentReport({
+      title,
+      markdown,
+    });
+    args.emit({
+      type: "report",
+      id,
+      title,
+      url: viewerUrl,
+    });
+  } catch (e) {
+    args.emit({
+      type: "report_error",
+      message: `Report writer failed: ${String(e)}`,
+    });
+  }
+}
+
 export class AgentRunner {
   private abortController: AbortController | null = null;
 
@@ -108,7 +156,7 @@ export class AgentRunner {
       getActiveTab,
       createTabAndActivate,
       emit,
-      maxSteps = 25,
+      maxSteps = 60,
     } = options;
     const model = getAgentLanguageModel();
     if (!model) {
@@ -132,6 +180,10 @@ export class AgentRunner {
     let visionFromNow = false;
     /** Injected into the next planner user message once, then cleared. */
     let pendingPageSnapshot: string | null = null;
+    /** Last read_page capture for save_report reuse on same URL. */
+    let lastReadCapture: LastReadCapture | null = null;
+    /** Content handed off to the reporting agent via save_report. */
+    const reportSegments: ReportSegmentStored[] = [];
     /** Counts executed browser actions (not see-only, not done). */
     let executedSteps = 0;
     /** Prevents infinite planning loops before first execute */
@@ -163,21 +215,50 @@ export class AgentRunner {
 
         let dims: VisionDims | null = null;
         let imageDataUrl = "";
+        let hasValidScreenshot = false;
 
         if (visionFromNow) {
           try {
-            const native = await tab.screenshot();
-            imageDataUrl = native.toDataURL();
-            const size = native.getSize();
-            const vp = (await tab.runJs(
-              "(() => [window.innerWidth, window.innerHeight])()",
-            )) as [number, number];
-            dims = {
-              shotW: size.width,
-              shotH: size.height,
-              viewW: vp[0],
-              viewH: vp[1],
-            };
+            let native = await tab.screenshot();
+            for (let attempt = 1; attempt <= 3 && native.isEmpty(); attempt++) {
+              emit({
+                type: "log",
+                message: `[agent] Screenshot empty, retry ${attempt}/3`,
+              });
+              await sleep(200 + attempt * 100);
+              native = await tab.screenshot();
+            }
+            if (native.isEmpty()) {
+              emit({
+                type: "log",
+                message:
+                  "[agent] Screenshot still empty after retries — planner turn is text-only until capture works.",
+              });
+            } else {
+              imageDataUrl = native.toDataURL();
+              const afterComma =
+                imageDataUrl.slice(imageDataUrl.indexOf("base64,") + 7) || "";
+              if (afterComma.replace(/\s/g, "").length < 32) {
+                emit({
+                  type: "log",
+                  message:
+                    "[agent] Screenshot data URL had no payload — treating as no image this turn.",
+                });
+                imageDataUrl = "";
+              } else {
+                hasValidScreenshot = true;
+                const size = native.getSize();
+                const vp = (await tab.runJs(
+                  "(() => [window.innerWidth, window.innerHeight])()",
+                )) as [number, number];
+                dims = {
+                  shotW: size.width,
+                  shotH: size.height,
+                  viewW: vp[0],
+                  viewH: vp[1],
+                };
+              }
+            }
           } catch (e) {
             emit({
               type: "conclusion",
@@ -187,6 +268,8 @@ export class AgentRunner {
             return;
           }
         }
+
+        const useImageInRequest = visionFromNow && hasValidScreenshot;
 
         const recent =
           historyLines.length > 0
@@ -205,7 +288,7 @@ export class AgentRunner {
 
         pendingPageSnapshot = null;
 
-        const visionBase = visionFromNow
+        const visionBase = useImageInRequest
           ? `[JSON-only. Reply must start with {.]\n\n` +
             [
               `Goal: ${goal}`,
@@ -221,24 +304,40 @@ export class AgentRunner {
             ]
               .filter(Boolean)
               .join("\n\n")
-          : `[JSON-only. Reply must start with {.]\n\n` +
-            [
-              `Goal: ${goal}`,
-              `No screenshot this turn.`,
-              `If you must target UI with click_xy/type/scroll first respond with ONLY {"action":"see"}`,
-              `Otherwise choose new_tab, navigate, read_page, publish_report, wait, or done.`,
-              `Executed actions: ${executedSteps} / ${maxSteps}`,
-              `Planner round: ${plannerRounds}`,
-              `Current tab URL: ${tab.url}`,
-              `Current tab title: ${tab.title}`,
-              recent,
-              snapshotSection,
-            ]
-              .filter(Boolean)
-              .join("\n\n");
+          : visionFromNow
+            ? `[JSON-only. Reply must start with {.]\n\n` +
+              [
+                `Goal: ${goal}`,
+                `Vision mode is on, but the screenshot was empty this round (tab may still be loading or not painted yet).`,
+                `Do not use click_xy, type, or scroll — you have no screenshot dimensions.`,
+                `Prefer: wait, read_page, navigate, new_tab, save_report, or done as appropriate.`,
+                `Executed actions: ${executedSteps} / ${maxSteps}`,
+                `Planner round: ${plannerRounds}`,
+                `Current tab URL: ${tab.url}`,
+                `Current tab title: ${tab.title}`,
+                recent,
+                snapshotSection,
+              ]
+                .filter(Boolean)
+                .join("\n\n")
+            : `[JSON-only. Reply must start with {.]\n\n` +
+              [
+                `Goal: ${goal}`,
+                `No screenshot this turn.`,
+                `If you must target UI with click_xy/type/scroll first respond with ONLY {"action":"see"}`,
+                `Otherwise choose new_tab, navigate, read_page, save_report, wait, or done.`,
+                `Executed actions: ${executedSteps} / ${maxSteps}`,
+                `Planner round: ${plannerRounds}`,
+                `Current tab URL: ${tab.url}`,
+                `Current tab title: ${tab.title}`,
+                recent,
+                snapshotSection,
+              ]
+                .filter(Boolean)
+                .join("\n\n");
 
-        const system = visionFromNow ? SYSTEM_VISION : SYSTEM_BLIND;
-        const userContent = visionFromNow
+        const system = useImageInRequest ? SYSTEM_VISION : SYSTEM_BLIND;
+        const userContent = useImageInRequest
           ? ([
               { type: "image" as const, image: imageDataUrl },
               { type: "text" as const, text: visionBase },
@@ -285,6 +384,22 @@ export class AgentRunner {
         }
 
         if (
+          visionFromNow &&
+          !useImageInRequest &&
+          (action.action === "click_xy" ||
+            action.action === "type" ||
+            action.action === "press_enter" ||
+            action.action === "scroll")
+        ) {
+          emit({
+            type: "log",
+            message:
+              "[agent] Skipping UI action — screenshot was empty this round; prefer wait or read_page.",
+          });
+          continue;
+        }
+
+        if (
           !visionFromNow &&
           (action.action === "click_xy" ||
             action.action === "type" ||
@@ -319,6 +434,13 @@ export class AgentRunner {
               signal,
             }),
           });
+          await runResearchReportPipeline({
+            goal,
+            segments: reportSegments,
+            historyLines,
+            emit,
+            signal,
+          });
           emit({ type: "finished", reason: summary || "done" });
           return;
         }
@@ -330,9 +452,17 @@ export class AgentRunner {
             dims,
             createTabAndActivate,
             emit,
+            { lastReadCapture },
           );
           if (execResult?.injectOncePageSnapshot) {
             pendingPageSnapshot = execResult.injectOncePageSnapshot;
+          }
+          if (execResult?.lastReadCapture) {
+            lastReadCapture = execResult.lastReadCapture;
+          }
+          if (execResult?.savedReportSegment) {
+            reportSegments.push(execResult.savedReportSegment);
+            lastReadCapture = null;
           }
         } catch (execErr) {
           emit({
@@ -357,11 +487,25 @@ export class AgentRunner {
           type: "conclusion",
           text: `Ran out of allowed actions (${maxSteps} steps) before the agent signaled completion. Increase the limit or shorten the goal.`,
         });
+        await runResearchReportPipeline({
+          goal,
+          segments: reportSegments,
+          historyLines,
+          emit,
+          signal,
+        });
         emit({ type: "finished", reason: "max_steps" });
       } else {
         emit({
           type: "conclusion",
           text: `Stopped because the planner hit too many rounds (${maxPlannerRounds}). The agent may have been looping (for example screenshot requests). Try a clearer goal or rerun.`,
+        });
+        await runResearchReportPipeline({
+          goal,
+          segments: reportSegments,
+          historyLines,
+          emit,
+          signal,
         });
         emit({ type: "finished", reason: "max_planner_rounds" });
       }

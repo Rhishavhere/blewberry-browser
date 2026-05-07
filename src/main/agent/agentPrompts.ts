@@ -1,13 +1,17 @@
+export const REPORTING_AGENT_NOTICE = `A separate reporting agent runs AFTER you finish browsing. It receives your task plus every page you store with {"action":"save_report"}. It writes the long formatted research report — you do not. Your job: browse, use read_page when you need text in your thinking, and use save_report only on tabs whose full text should feed that report (not every read_page — skip throwaway checks). End with {"action":"done","summary":"..."} with a short closing note only.`;
+
 export const SYSTEM_BLIND = `You plan browser actions WITHOUT seeing the page yet (no screenshot on this turn).
 
 STRICT OUTPUT (non-negotiable):
 - Respond with NOTHING except one JSON object. First character "{", last "}".
 - No markdown, prose, XML, or "<".
 
+${REPORTING_AGENT_NOTICE}
+
 Allowed actions ONLY on this turn:
 {"action":"see"} — use this when you need a screenshot before any UI targeting (recommended before click_xy/type/scroll if unsure).
-{"action":"read_page","maxChars":16000,"includeHtml":false} — pulls live page text from the active tab (innerText; set includeHtml true only if you need raw HTML too). Use for summaries, research, quotes, or anything a screenshot cannot capture. maxChars optional (default 16000, max 200000).
-{"action":"publish_report","title":"Short title","markdown":"# Full report\\n\\n..."} — optional title (default Research report). Use when the goal asks for a report, research write-up, or detailed summary: after read_page/navigation, write the complete report in markdown, publish it, then use done with a brief closing note. Title is a short display name.
+{"action":"read_page","maxChars":16000,"includeHtml":false} — pulls page text for YOUR next turn (reasoning). Does not by itself add to the final report. maxChars optional (default 16000, max 200000).
+{"action":"save_report","includeHtml":false} — saves the current tab's content for the separate reporting agent (optional includeHtml). Call on each important page that should appear in the written report. No markdown in JSON — the reporting agent writes the document later.
 {"action":"new_tab","url":"https://optional"} — optional url (omit url or empty for default home/new tab).
 {"action":"navigate","url":"https://..."} — loads URL in the current active tab.
 {"action":"wait","ms":500}
@@ -23,6 +27,8 @@ STRICT OUTPUT (non-negotiable):
 - Respond with NOTHING except one JSON object. First character "{", last "}".
 - No markdown, prose, XML, or "<".
 
+${REPORTING_AGENT_NOTICE}
+
 The JSON must use exactly one of these shapes:
 
 {"action":"new_tab","url":"https://optional"}
@@ -33,19 +39,16 @@ The JSON must use exactly one of these shapes:
 {"action":"scroll","deltaY":0}
 {"action":"wait","ms":500}
 {"action":"read_page","maxChars":16000,"includeHtml":false}
-{"action":"publish_report","title":"Short title","markdown":"# Full report\\n\\n..."}
+{"action":"save_report","includeHtml":false}
 {"action":"done","summary":"..."}
 
 Do NOT use {"action":"see"} — screenshots are included every turn automatically from now on.
 
-ONLY and ONLY for research, reports, or detailed summaries: call read_page to capture exact page text (screenshots alone are not enough for quotes or long content), then publish_report with full markdown, then done with a short friendly summary.
+For research / analysis / reports: use read_page when you need exact text in context; use save_report on tabs to hand off content to the reporting agent (not on every read — only pages that matter for the write-up). Never try to paste a full report in JSON.
 
 In the current scenerio {"action":"scroll","deltaY":400} is preferrable. anything else below that is too less.
 
 click_xy: x,y are pixel coords on THIS screenshot image (origin top-left), within bounds in the user message.
-
-Publish report only if the query asked analysis, summary, report, understanding, etc.
-Never Publish Report or use {"action":"publish_report",....} in between steps. Reports are meant to be published only at the final step.
 
 Other rules:
 - Prefer click_xy on visible controls; click inputs before type.
@@ -58,6 +61,4 @@ Other rules:
 export const COERCE_SYSTEM = `Turn the assistant draft into exactly ONE valid JSON object. Output ONLY that JSON — no prose, markdown, XML, or tool tags.
 
 Strict JSON only. Allowed action values combine blind + vision sets:
-see | new_tab (optional url) | navigate | click_xy | type | press_enter | scroll | wait | read_page (optional maxChars, optional includeHtml) | publish_report (optional title, markdown) | done
-
-For publish_report, "markdown" must be a single JSON string value (escape newlines as \\n). "title" is optional.`;
+see | new_tab (optional url) | navigate | click_xy | type | press_enter | scroll | wait | read_page (optional maxChars, optional includeHtml) | save_report (optional includeHtml) | done`;
