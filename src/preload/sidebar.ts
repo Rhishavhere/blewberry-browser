@@ -26,6 +26,12 @@ type AgentStepAction =
   | { action: "press_enter" }
   | { action: "scroll"; deltaY: number }
   | { action: "wait"; ms: number }
+  | {
+      action: "read_page";
+      maxChars?: number;
+      includeHtml?: boolean;
+    }
+  | { action: "publish_report"; title?: string; markdown: string }
   | { action: "done"; summary: string };
 
 type AgentEventPayload =
@@ -37,7 +43,8 @@ type AgentEventPayload =
     }
   | { type: "conclusion"; text: string }
   | { type: "error"; message: string }
-  | { type: "finished"; reason: string };
+  | { type: "finished"; reason: string }
+  | { type: "report"; id: string; title: string; url: string };
 
 type HomeAgentRunPayload = {
   goal: string;
@@ -58,9 +65,9 @@ const sidebarAPI = {
     electronAPI.ipcRenderer.on("chat-response", (_, data) => callback(data));
   },
 
-  onMessagesUpdated: (callback: (messages: any[]) => void) => {
+  onMessagesUpdated: (callback: (messages: unknown[]) => void) => {
     electronAPI.ipcRenderer.on("chat-messages-updated", (_, messages) =>
-      callback(messages)
+      callback(messages),
     );
   },
 
@@ -88,6 +95,13 @@ const sidebarAPI = {
     electronAPI.ipcRenderer.invoke("agent-start", { goal, maxSteps }),
 
   agentStop: () => electronAPI.ipcRenderer.invoke("agent-stop"),
+
+  openAgentReportTab: (
+    reportId: string,
+  ): Promise<
+    | { ok: true; tabId: string; url: string; title: string }
+    | { ok: false; error: string }
+  > => electronAPI.ipcRenderer.invoke("agent-open-report-tab", reportId),
 
   onAgentEvent: (callback: (data: AgentEventPayload) => void) => {
     electronAPI.ipcRenderer.on("agent-event", (_, data) => callback(data));

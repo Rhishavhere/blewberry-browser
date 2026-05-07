@@ -1,6 +1,8 @@
 import { ipcMain, WebContents } from "electron";
 import type { Window } from "./Window";
 import { isHomePageUrl } from "./homePage";
+import { getReportViewerPageUrl, isReportPageUrl } from "./reportPage";
+import { loadAgentReport } from "./agent/agentReportStorage";
 import { AgentRunner } from "./AgentRunner";
 
 export class EventManager {
@@ -176,10 +178,7 @@ export class EventManager {
     // Home (Agent pill): show sidebar and open Agent panel with goal
     ipcMain.handle(
       "home-open-sidebar-with-agent",
-      async (
-        event,
-        request: { message: string; messageId: string }
-      ) => {
+      async (event, request: { message: string; messageId: string }) => {
         if (!isHomePageUrl(event.sender.getURL())) return false;
         const text = request?.message?.trim() ?? "";
         if (!text) return false;
@@ -195,7 +194,7 @@ export class EventManager {
           messageId: request.messageId,
         });
         return true;
-      }
+      },
     );
 
     // Chat message
@@ -237,9 +236,10 @@ export class EventManager {
       "agent-start",
       async (
         _,
-        payload: { goal: string; maxSteps?: number }
+        payload: { goal: string; maxSteps?: number },
       ): Promise<{ ok: true } | { ok: false; error: string }> => {
-        const goal = typeof payload?.goal === "string" ? payload.goal.trim() : "";
+        const goal =
+          typeof payload?.goal === "string" ? payload.goal.trim() : "";
         if (!goal) return { ok: false, error: "empty_goal" };
 
         this.agentRunner.stop();
@@ -265,13 +265,37 @@ export class EventManager {
           });
 
         return { ok: true };
-      }
+      },
     );
 
     ipcMain.handle("agent-stop", () => {
       this.agentRunner.stop();
       this.mainWindow.focusActiveTabContents();
       return true;
+    });
+
+    ipcMain.handle("agent-report-get", async (event, id: string) => {
+      const url = event.sender.getURL();
+      if (!isReportPageUrl(url)) return null;
+      return loadAgentReport(String(id ?? "").trim());
+    });
+
+    ipcMain.handle("agent-open-report-tab", async (_, id: string) => {
+      const safe = String(id ?? "").trim();
+      if (!/^[0-9a-f-]{36}$/i.test(safe)) {
+        return { ok: false as const, error: "bad_id" };
+      }
+      const data = await loadAgentReport(safe);
+      if (!data) return { ok: false as const, error: "not_found" };
+      const viewerUrl = getReportViewerPageUrl(safe);
+      const t = this.mainWindow.createTab(viewerUrl);
+      this.mainWindow.switchActiveTab(t.id);
+      return {
+        ok: true as const,
+        tabId: t.id,
+        url: viewerUrl,
+        title: data.title,
+      };
     });
   }
 
@@ -328,7 +352,7 @@ export class EventManager {
     if (this.mainWindow.topBar.view.webContents !== sender) {
       this.mainWindow.topBar.view.webContents.send(
         "dark-mode-updated",
-        isDarkMode
+        isDarkMode,
       );
     }
 
@@ -336,7 +360,7 @@ export class EventManager {
     if (this.mainWindow.sidebar.view.webContents !== sender) {
       this.mainWindow.sidebar.view.webContents.send(
         "dark-mode-updated",
-        isDarkMode
+        isDarkMode,
       );
     }
 

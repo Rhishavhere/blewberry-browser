@@ -10,6 +10,8 @@
     "src/renderer/sidebar/**/*.tsx",
     "src/renderer/home/**/*",
     "src/renderer/home/**/*.tsx",
+    "src/renderer/report/**/*",
+    "src/renderer/report/**/*.tsx",
     "src/renderer/topbar/**/*",
     "src/renderer/topbar/**/*.tsx",
     "src/preload/*.d.ts"

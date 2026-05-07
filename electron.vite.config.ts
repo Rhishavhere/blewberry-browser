@@ -28,6 +28,7 @@ export default defineConfig({
           topbar: resolve(__dirname, "src/renderer/topbar/index.html"),
           sidebar: resolve(__dirname, "src/renderer/sidebar/index.html"),
           home: resolve(__dirname, "src/renderer/home/index.html"),
+          report: resolve(__dirname, "src/renderer/report/index.html"),
         },
       },
     },

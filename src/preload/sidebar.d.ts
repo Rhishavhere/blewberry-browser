@@ -36,6 +36,12 @@ type AgentStepAction =
   | { action: "press_enter" }
   | { action: "scroll"; deltaY: number }
   | { action: "wait"; ms: number }
+  | {
+      action: "read_page";
+      maxChars?: number;
+      includeHtml?: boolean;
+    }
+  | { action: "publish_report"; title?: string; markdown: string }
   | { action: "done"; summary: string };
 
 type AgentEventPayload =
@@ -43,7 +49,8 @@ type AgentEventPayload =
   | { type: "step"; step: number; action: AgentStepAction }
   | { type: "conclusion"; text: string }
   | { type: "error"; message: string }
-  | { type: "finished"; reason: string };
+  | { type: "finished"; reason: string }
+  | { type: "report"; id: string; title: string; url: string };
 
 type HomeAgentRunPayload = {
   goal: string;
@@ -78,6 +85,13 @@ interface SidebarAPI {
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
 
   agentStop: () => Promise<boolean>;
+
+  openAgentReportTab: (
+    reportId: string
+  ) => Promise<
+    | { ok: true; tabId: string; url: string; title: string }
+    | { ok: false; error: string }
+  >;
 
   onAgentEvent: (callback: (event: AgentEventPayload) => void) => void;
   removeAgentEventListener: () => void;

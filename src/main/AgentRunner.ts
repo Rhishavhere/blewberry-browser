@@ -1,38 +1,25 @@
 import { generateText, type LanguageModel } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
-import { z } from "zod";
 import * as dotenv from "dotenv";
 import { join } from "path";
 import type { Tab } from "./Tab";
+import { SYSTEM_BLIND, SYSTEM_VISION } from "./agent/agentPrompts";
+import {
+  type AgentEvent,
+  type AgentStep,
+  parseOrRepairAgentStep,
+} from "./agent/agentSchema";
+import { executeAgentStep, type VisionDims } from "./agent/agentExecute";
 
 dotenv.config({ path: join(__dirname, "../../.env") });
 
-export const AgentStepSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("see") }),
-  z.object({ action: z.literal("new_tab"), url: z.string().optional() }),
-  z.object({ action: z.literal("navigate"), url: z.string() }),
-  z.object({
-    action: z.literal("click_xy"),
-    x: z.number(),
-    y: z.number(),
-  }),
-  z.object({ action: z.literal("type"), text: z.string() }),
-  z.object({ action: z.literal("press_enter") }),
-  z.object({ action: z.literal("scroll"), deltaY: z.number() }),
-  z.object({ action: z.literal("wait"), ms: z.number() }),
-  z.object({ action: z.literal("done"), summary: z.string() }),
-]);
+export type { AgentStep, AgentEvent } from "./agent/agentSchema";
+export { AgentStepSchema } from "./agent/agentSchema";
 
-export type AgentStep = z.infer<typeof AgentStepSchema>;
-
-export type AgentEvent =
-  | { type: "log"; message: string }
-  | { type: "step"; step: number; action: AgentStep }
-  /** User-facing prose summary (shown in the Reply card, not mixed with technical logs). */
-  | { type: "conclusion"; text: string }
-  | { type: "error"; message: string }
-  | { type: "finished"; reason: string };
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function writeUserConclusion(args: {
   goal: string;
@@ -53,9 +40,9 @@ async function writeUserConclusion(args: {
     const { text } = await generateText({
       model,
       system: `Write a concise conclusion for someone who delegated a browsing task.
-2–5 sentences, friendly and clear. Mention what happened, whether the stated goal appears satisfied, any notable page or search results, and what the user might do next when relevant.
+2-3 sentences, friendly and clear. Mention what happened, whether the stated goal appears satisfied, any notable page or search results, and what the user might do next when relevant.
 
-Rules: Plain language only — no JSON, no XML tags, no bullet lists framed as markdown if you can avoid them. Do not apologize excessively.`,
+Rules: casual language only — no JSON, no XML tags, no bullet lists framed as markdown if you can avoid them. Do not apologize excessively.`,
       temperature: 0.35,
       maxOutputTokens: 450,
       abortSignal: signal,
@@ -85,174 +72,6 @@ Rules: Plain language only — no JSON, no XML tags, no bullet lists framed as m
   }
 }
 
-const SYSTEM_BLIND = `You plan browser actions WITHOUT seeing the page yet (no screenshot on this turn).
-
-STRICT OUTPUT (non-negotiable):
-- Respond with NOTHING except one JSON object. First character "{", last "}".
-- No markdown, prose, XML, or "<".
-
-Allowed actions ONLY on this turn:
-{"action":"see"} — use this when you need a screenshot before any UI targeting (recommended before click_xy/type/scroll if unsure).
-{"action":"new_tab","url":"https://optional"} — optional url (omit url or empty for default home/new tab).
-{"action":"navigate","url":"https://..."} — loads URL in the current active tab.
-{"action":"wait","ms":500}
-{"action":"done","summary":"..."}
-
-You CANNOT use click_xy, type, press_enter, or scroll until a screenshot has been sent (respond with see first).
-
-After the first screenshot is ever sent to you, future turns already include screenshots — you never need {"action":"see"} again those will be logged and ignored.`;
-
-const SYSTEM_VISION = `You control a browser from screenshots (this turn HAS an image attached).
-
-STRICT OUTPUT (non-negotiable):
-- Respond with NOTHING except one JSON object. First character "{", last "}".
-- No markdown, prose, XML, or "<".
-
-The JSON must use exactly one of these shapes:
-
-{"action":"new_tab","url":"https://optional"}
-{"action":"navigate","url":"https://..."}
-{"action":"click_xy","x":0,"y":0}
-{"action":"type","text":"..."}
-{"action":"press_enter"}
-{"action":"scroll","deltaY":0}
-{"action":"wait","ms":500}
-{"action":"done","summary":"..."}
-
-Do NOT use {"action":"see"} — screenshots are included every turn automatically from now on.
-
-In the current scenerio {"action":"scroll","deltaY":400} is preferrable. anything else below that is too less.
-
-click_xy: x,y are pixel coords on THIS screenshot image (origin top-left), within bounds in the user message.
-
-Other rules:
-- Prefer click_xy on visible controls; click inputs before type.
-- press_enter sends Enter to the focused control (submit search, activate default button). Use after typing a query or focusing the right field.
-- Never use the Blueberry home page for searching , always use {"action":"navigate","url":"https://..."} instead directly
-- navigate uses full https URLs where possible.
-- scroll: positive deltaY scrolls down.
-- wait after navigations as needed for load.`;
-
-const COERCE_SYSTEM = `Turn the assistant draft into exactly ONE valid JSON object. Output ONLY that JSON — no prose, markdown, XML, or tool tags.
-
-Strict JSON only. Allowed action values combine blind + vision sets:
-see | new_tab (optional url) | navigate | click_xy | type | press_enter | scroll | wait | done`;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, n));
-}
-
-/** Injected into the tab so React controlled inputs update (plain el.value breaks React state). */
-function buildTypeIntoActiveElementScript(appendText: string): string {
-  const lit = JSON.stringify(appendText);
-  return `(function(){
-  var t = ${lit};
-  var el = document.activeElement;
-  if (!el) return "no_focus";
-  if (el.isContentEditable) {
-    document.execCommand("insertText", false, t);
-    return "contenteditable";
-  }
-  var tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA") {
-    var proto = tag === "INPUT" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
-    var desc = Object.getOwnPropertyDescriptor(proto, "value");
-    if (desc && desc.set && desc.get) {
-      desc.set.call(el, desc.get.call(el) + t);
-    } else {
-      el.value = (el.value || "") + t;
-    }
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-    return "input";
-  }
-  if ("value" in el && typeof el.value === "string") {
-    el.value += t;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    return "input_fallback";
-  }
-  return "unsupported";
-})()`;
-}
-
-type VisionDims = { shotW: number; shotH: number; viewW: number; viewH: number };
-
-/** Plain-text JSON parse — avoids Anthropic structured-output tools (broken for our Zod discriminatedUnion). */
-function parseAgentStepJson(raw: string): AgentStep {
-  let t = raw.trim();
-  const fence =
-    /^```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```$/m.exec(t) ??
-    /```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```/m.exec(t);
-  if (fence) t = fence[1].trim();
-  const start = t.indexOf("{");
-  const end = t.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error(`no_json_object_in_model_output: ${raw.slice(0, 200)}`);
-  }
-  let jsonSlice = t.slice(start, end + 1);
-  jsonSlice = jsonSlice.replace(/,\s*([}\]])/g, "$1");
-  let obj: unknown;
-  try {
-    obj = JSON.parse(jsonSlice) as unknown;
-  } catch {
-    throw new Error(`json_parse_failed: ${jsonSlice.slice(0, 240)}`);
-  }
-  const parsed = AgentStepSchema.safeParse(obj);
-  if (!parsed.success) {
-    throw new Error(`schema_mismatch: ${parsed.error.message}`);
-  }
-  return parsed.data;
-}
-
-async function parseOrRepairAgentStep(
-  visionText: string,
-  model: LanguageModel,
-  signal: AbortSignal,
-  emit: (event: AgentEvent) => void
-): Promise<AgentStep> {
-  try {
-    return parseAgentStepJson(visionText);
-  } catch (e1) {
-    emit({
-      type: "log",
-      message: `[repair] Reply was not pure JSON (${String(e1).slice(0, 240)}…) — coercion pass`,
-    });
-  }
-
-  const draft = visionText.trim().slice(0, 12_000);
-  const { text } = await generateText({
-    model,
-    system: COERCE_SYSTEM,
-    abortSignal: signal,
-    maxRetries: 1,
-    temperature: 0,
-    maxOutputTokens: 384,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: `Convert this assistant draft into one JSON action object:\n\n${draft}`,
-          },
-        ],
-      },
-    ],
-  });
-
-  try {
-    return parseAgentStepJson(text);
-  } catch (e2) {
-    throw new Error(
-      `json_coercion_failed_after_repair: ${String(e2)} ; snippet=${visionText.slice(0, 120)}`
-    );
-  }
-}
-
 function getAgentLanguageModel(): LanguageModel | null {
   const provider =
     process.env.LLM_PROVIDER?.toLowerCase() === "anthropic"
@@ -260,9 +79,7 @@ function getAgentLanguageModel(): LanguageModel | null {
       : "openai";
   const modelId =
     process.env.AGENT_MODEL ||
-    (provider === "anthropic"
-      ? "claude-3-5-haiku-20241022"
-      : "gpt-4o-mini");
+    (provider === "anthropic" ? "claude-3-5-haiku-20241022" : "gpt-4o-mini");
   if (provider === "anthropic") {
     if (!process.env.ANTHROPIC_API_KEY) return null;
     return anthropic(modelId);
@@ -313,6 +130,8 @@ export class AgentRunner {
     const historyLines: string[] = [];
     /** After true, every planner call attaches a screenshot. */
     let visionFromNow = false;
+    /** Injected into the next planner user message once, then cleared. */
+    let pendingPageSnapshot: string | null = null;
     /** Counts executed browser actions (not see-only, not done). */
     let executedSteps = 0;
     /** Prevents infinite planning loops before first execute */
@@ -351,7 +170,7 @@ export class AgentRunner {
             imageDataUrl = native.toDataURL();
             const size = native.getSize();
             const vp = (await tab.runJs(
-              "(() => [window.innerWidth, window.innerHeight])()"
+              "(() => [window.innerWidth, window.innerHeight])()",
             )) as [number, number];
             dims = {
               shotW: size.width,
@@ -374,7 +193,19 @@ export class AgentRunner {
             ? `Recent actions:\n${historyLines.slice(-8).join("\n")}`
             : "";
 
-        const ctxText = visionFromNow
+        const snapshotSection =
+          pendingPageSnapshot !== null
+            ? [
+                "---",
+                "Page snapshot (included once after read_page — use exact text for quotes and summaries):",
+                pendingPageSnapshot,
+                "---",
+              ].join("\n\n")
+            : "";
+
+        pendingPageSnapshot = null;
+
+        const visionBase = visionFromNow
           ? `[JSON-only. Reply must start with {.]\n\n` +
             [
               `Goal: ${goal}`,
@@ -386,6 +217,7 @@ export class AgentRunner {
               `Viewport CSS: ${dims!.viewW}x${dims!.viewH}`,
               `click_xy must use screenshot pixel coordinates within [0, ${dims!.shotW - 1}] x [0, ${dims!.shotH - 1}].`,
               recent,
+              snapshotSection,
             ]
               .filter(Boolean)
               .join("\n\n")
@@ -394,12 +226,13 @@ export class AgentRunner {
               `Goal: ${goal}`,
               `No screenshot this turn.`,
               `If you must target UI with click_xy/type/scroll first respond with ONLY {"action":"see"}`,
-              `Otherwise choose new_tab, navigate, wait, or done.`,
+              `Otherwise choose new_tab, navigate, read_page, publish_report, wait, or done.`,
               `Executed actions: ${executedSteps} / ${maxSteps}`,
               `Planner round: ${plannerRounds}`,
               `Current tab URL: ${tab.url}`,
               `Current tab title: ${tab.title}`,
               recent,
+              snapshotSection,
             ]
               .filter(Boolean)
               .join("\n\n");
@@ -408,9 +241,9 @@ export class AgentRunner {
         const userContent = visionFromNow
           ? ([
               { type: "image" as const, image: imageDataUrl },
-              { type: "text" as const, text: ctxText },
+              { type: "text" as const, text: visionBase },
             ] as const)
-          : [{ type: "text" as const, text: ctxText }];
+          : [{ type: "text" as const, text: visionBase }];
 
         let action: AgentStep;
         try {
@@ -420,15 +253,14 @@ export class AgentRunner {
             abortSignal: signal,
             maxRetries: 1,
             temperature: 0,
-            maxOutputTokens: visionFromNow ? 512 : 384,
+            maxOutputTokens: visionFromNow ? 12_288 : 12_288,
             messages: [{ role: "user", content: [...userContent] }],
           });
           action = await parseOrRepairAgentStep(text, model, signal, emit);
         } catch (e) {
           emit({
             type: "conclusion",
-            text:
-              "The planner hit an error while talking to the AI. Check your API key and model name in .env, then retry.",
+            text: "The planner hit an error while talking to the AI. Check your API key and model name in .env, then retry.",
           });
           emit({ type: "error", message: `llm_error: ${String(e)}` });
           return;
@@ -445,7 +277,8 @@ export class AgentRunner {
           }
           emit({
             type: "log",
-            message: "[agent] Screenshot requested; next planner round uses vision.",
+            message:
+              "[agent] Screenshot requested; next planner round uses vision.",
           });
           visionFromNow = true;
           continue;
@@ -460,13 +293,12 @@ export class AgentRunner {
         ) {
           emit({
             type: "conclusion",
-            text:
-              "This step needs a screenshot first. The agent should reply with only {\"action\":\"see\"} before clicking or typing.",
+            text: 'This step needs a screenshot first. The agent should reply with only {"action":"see"} before clicking or typing.',
           });
           emit({
             type: "error",
             message:
-              "blind_turn: use {\"action\":\"see\"} once before click_xy, type, press_enter, or scroll.",
+              'blind_turn: use {"action":"see"} once before click_xy, type, press_enter, or scroll.',
           });
           return;
         }
@@ -492,13 +324,16 @@ export class AgentRunner {
         }
 
         try {
-          await executeStep(
+          const execResult = await executeAgentStep(
             tab,
             action,
             dims,
             createTabAndActivate,
-            emit
+            emit,
           );
+          if (execResult?.injectOncePageSnapshot) {
+            pendingPageSnapshot = execResult.injectOncePageSnapshot;
+          }
         } catch (execErr) {
           emit({
             type: "conclusion",
@@ -533,62 +368,5 @@ export class AgentRunner {
     } finally {
       this.abortController = null;
     }
-  }
-}
-
-async function executeStep(
-  tab: Tab,
-  action: AgentStep,
-  dims: VisionDims | null,
-  createTabAndActivate: (url?: string) => Tab,
-  emit: (event: AgentEvent) => void
-): Promise<void> {
-  switch (action.action) {
-    case "see":
-      return;
-    case "new_tab": {
-      const u = action.url?.trim();
-      createTabAndActivate(u && u.length > 0 ? u : undefined);
-      emit({
-        type: "log",
-        message: `[agent] new tab${u ? ` → ${u}` : " (home)"}`,
-      });
-      return;
-    }
-    case "navigate":
-      await tab.loadURL(action.url);
-      return;
-    case "click_xy": {
-      if (!dims) {
-        throw new Error("click_xy without vision dims");
-      }
-      const { shotW, shotH, viewW, viewH } = dims;
-      const xImg = clamp(action.x, 0, Math.max(0, shotW - 1));
-      const yImg = clamp(action.y, 0, Math.max(0, shotH - 1));
-      const xCss = shotW > 0 ? (xImg / shotW) * viewW : 0;
-      const yCss = shotH > 0 ? (yImg / shotH) * viewH : 0;
-      emit({
-        type: "log",
-        message: `click: screenshot(${xImg},${yImg}) → view CSS (${xCss.toFixed(1)},${yCss.toFixed(1)})`,
-      });
-      tab.clickAtCss(xCss, yCss);
-      return;
-    }
-    case "press_enter":
-      tab.pressEnter();
-      emit({ type: "log", message: "[agent] press Enter" });
-      return;
-    case "type":
-      await tab.runJs(buildTypeIntoActiveElementScript(action.text));
-      return;
-    case "scroll": {
-      await tab.runJs(`void window.scrollBy(0, ${Number(action.deltaY)});`);
-      return;
-    }
-    case "wait":
-      await sleep(Math.min(15_000, Math.max(0, action.ms)));
-      return;
-    default:
-      return;
   }
 }
