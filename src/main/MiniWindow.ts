@@ -97,7 +97,19 @@ export class MiniWindow {
     this.collapse(); // always collapse when hiding
   }
 
-  public async expandAndSearch(url: string): Promise<void> {
+  public expandLow(): void {
+    this.isExpanded = true;
+    
+    const bounds = this.baseWindow.getBounds();
+    this.baseWindow.setBounds({
+      ...bounds,
+      height: 300, // Low expanded view height
+    });
+
+    this.updateBounds();
+  }
+
+  public expandFull(): void {
     this.isExpanded = true;
     
     const bounds = this.baseWindow.getBounds();

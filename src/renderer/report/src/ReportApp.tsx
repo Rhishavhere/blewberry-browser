@@ -246,7 +246,7 @@ export const ReportApp: React.FC = () => {
       setScrolled(window.scrollY > 12);
       setShowBackTop(window.scrollY > 600);
     };
-    window.addEventListener("scroll", onScroll, { passive: true });
+      window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 

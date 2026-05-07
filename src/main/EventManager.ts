@@ -7,6 +7,8 @@ import { getReportViewerPageUrl, isReportPageUrl } from "./reportPage";
 import { loadAgentReport } from "./agent/agentReportStorage";
 import { runPageMutation } from "./agent/mutateRunner";
 import { AgentRunner } from "./AgentRunner";
+import { HeadlessAgent } from "./agent/headlessAgent";
+import { Tab } from "./Tab";
 
 export class EventManager {
   private mainWindow: Window;
@@ -310,6 +312,10 @@ export class EventManager {
       return loadAgentReport(String(id ?? "").trim());
     });
 
+    ipcMain.handle("mini-agent-report-get", async (_, id: string) => {
+      return loadAgentReport(String(id ?? "").trim());
+    });
+
     ipcMain.handle("agent-open-report-tab", async (_, id: string) => {
       const safe = String(id ?? "").trim();
       if (!/^[0-9a-f-]{36}$/i.test(safe)) {
@@ -344,6 +350,29 @@ export class EventManager {
           .trim()
           .slice(0, 80) || "report";
       const result = await dialog.showSaveDialog(this.mainWindow.window, {
+        defaultPath: `${safeName}.md`,
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      });
+      if (result.canceled || !result.filePath) {
+        return { ok: false as const, error: "cancelled" };
+      }
+      await writeFile(result.filePath, data.markdown, "utf-8");
+      return { ok: true as const, path: result.filePath };
+    });
+
+    ipcMain.handle("mini-agent-report-save-as", async (_, id: string) => {
+      const safe = String(id ?? "").trim();
+      if (!/^[0-9a-f-]{36}$/i.test(safe)) {
+        return { ok: false as const, error: "bad_id" };
+      }
+      const data = await loadAgentReport(safe);
+      if (!data) return { ok: false as const, error: "not_found" };
+      const safeName =
+        data.title
+          .replace(/[<>:"/\\|?*]/g, "_")
+          .trim()
+          .slice(0, 80) || "report";
+      const result = await dialog.showSaveDialog(this.miniWindow.window, {
         defaultPath: `${safeName}.md`,
         filters: [{ name: "Markdown", extensions: ["md"] }],
       });
@@ -441,8 +470,31 @@ export class EventManager {
       return true;
     });
 
-    ipcMain.handle("mini-search", async (_, url: string) => {
-      await this.miniWindow.expandAndSearch(url);
+    ipcMain.handle("mini-search", async () => {
+      this.miniWindow.expandFull();
+      return true;
+    });
+
+    ipcMain.handle("mini-expand-full", () => {
+      this.miniWindow.expandFull();
+      return true;
+    });
+
+    ipcMain.handle("headless-agent-start", async (event, goal: string) => {
+      this.miniWindow.expandLow();
+      const headlessTab = new Tab("headless-" + Date.now(), "about:blank");
+      const agent = new HeadlessAgent();
+      const sender = event.sender;
+      
+      agent.run({
+        goal,
+        hiddenTab: headlessTab,
+        emit: (agentEvent) => {
+          sender.send("headless-agent-event", agentEvent);
+        }
+      }).finally(() => {
+        headlessTab.destroy();
+      });
       return true;
     });
 
