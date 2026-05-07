@@ -424,21 +424,18 @@ export class EventManager {
       return true;
     });
 
-    ipcMain.handle("exit-mini-mode", async () => {
-      // Grab URL before hiding, because hide() destroys the tab
-      const url = this.miniWindow.currentUrl;
-
+    ipcMain.handle("exit-mini-mode", async (_, urlFromReact?: string) => {
       this.miniWindow.hide();
       this.mainWindow.show();
       
       // Transfer URL if we have one
-      if (url) {
+      if (urlFromReact) {
         let tab = this.mainWindow.activeTab;
         if (!tab) {
-          tab = this.mainWindow.createTab(url);
+          tab = this.mainWindow.createTab(urlFromReact);
           this.mainWindow.switchActiveTab(tab.id);
         } else {
-          await tab.loadURL(url);
+          await tab.loadURL(urlFromReact);
         }
       }
       return true;

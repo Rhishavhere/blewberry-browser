@@ -1,15 +1,13 @@
 import { BaseWindow, WebContentsView } from "electron";
 import { join } from "path";
 import { is } from "@electron-toolkit/utils";
-import { Tab } from "./Tab";
 
 export class MiniWindow {
   private baseWindow: BaseWindow;
   private uiView: WebContentsView;
-  private resultTab: Tab | null = null;
   private isExpanded: boolean = false;
-  private readonly defaultWidth = 600;
-  private readonly defaultHeight = 80;
+  private readonly defaultWidth = 800;
+  private readonly defaultHeight = 60;
   private readonly expandedHeight = 600;
 
   constructor() {
@@ -50,8 +48,12 @@ export class MiniWindow {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: false,
+        webviewTag: true, // Enable <webview> in the React renderer
       },
     });
+
+    // Make the view background transparent so CSS transparency works
+    view.setBackgroundColor('#00000000');
 
     if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
       const miniUrl = new URL("/mini/", process.env["ELECTRON_RENDERER_URL"]);
@@ -65,21 +67,13 @@ export class MiniWindow {
 
   private updateBounds(): void {
     const bounds = this.baseWindow.getBounds();
+    // uiView always fills the entire baseWindow
     this.uiView.setBounds({
       x: 0,
       y: 0,
       width: bounds.width,
-      height: this.defaultHeight, // UI is always 60px high at the top
+      height: bounds.height,
     });
-
-    if (this.isExpanded && this.resultTab) {
-      this.resultTab.view.setBounds({
-        x: 0,
-        y: this.defaultHeight,
-        width: bounds.width,
-        height: bounds.height - this.defaultHeight,
-      });
-    }
   }
 
   public show(): void {
@@ -112,13 +106,6 @@ export class MiniWindow {
       height: this.expandedHeight,
     });
 
-    if (!this.resultTab) {
-      this.resultTab = new Tab("mini-tab-1", url);
-      this.baseWindow.contentView.addChildView(this.resultTab.view);
-    } else {
-      await this.resultTab.loadURL(url);
-    }
-
     this.updateBounds();
   }
 
@@ -131,12 +118,6 @@ export class MiniWindow {
       height: this.defaultHeight,
     });
 
-    if (this.resultTab) {
-      this.baseWindow.contentView.removeChildView(this.resultTab.view);
-      this.resultTab.destroy();
-      this.resultTab = null;
-    }
-
     this.updateBounds();
   }
 
@@ -144,14 +125,7 @@ export class MiniWindow {
     return this.isExpanded;
   }
 
-  public get currentUrl(): string | null {
-    return this.resultTab ? this.resultTab.url : null;
-  }
-
   public destroy(): void {
-    if (this.resultTab) {
-      this.resultTab.destroy();
-    }
     this.baseWindow.close();
   }
 }

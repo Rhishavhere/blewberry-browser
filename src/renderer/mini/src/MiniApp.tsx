@@ -1,15 +1,37 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { X, Maximize2 } from 'lucide-react'
 
 export const MiniApp: React.FC = () => {
   const [query, setQuery] = useState('')
+  const [searchUrl, setSearchUrl] = useState('')
   const [isExpanded, setIsExpanded] = useState(false)
+  
+  const webviewRef = useRef<Electron.WebviewTag>(null)
 
   // Auto-focus input on mount
   useEffect(() => {
     const input = document.getElementById('mini-search-input')
     if (input) input.focus()
   }, [])
+
+  // Sync webview navigation with React state
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+
+    const handleNavigate = (e: any) => {
+      setSearchUrl(e.url);
+      // setQuery(e.url); // Optionally update the input bar to show the current URL
+    };
+
+    webview.addEventListener('did-navigate', handleNavigate);
+    webview.addEventListener('did-navigate-in-page', handleNavigate);
+
+    return () => {
+      webview.removeEventListener('did-navigate', handleNavigate);
+      webview.removeEventListener('did-navigate-in-page', handleNavigate);
+    };
+  }, [isExpanded]); // re-run when webview is mounted
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,9 +46,10 @@ export const MiniApp: React.FC = () => {
         }
     }
     
+    setSearchUrl(finalUrl)
+    setIsExpanded(true)
     if (window.miniAPI) {
-        window.miniAPI.search(finalUrl)
-        setIsExpanded(true)
+        window.miniAPI.search(finalUrl) // Tells main process to expand bounds
     }
   }
 
@@ -36,6 +59,7 @@ export const MiniApp: React.FC = () => {
         if (window.miniAPI) window.miniAPI.collapse()
         setIsExpanded(false)
         setQuery('')
+        setSearchUrl('')
     } else {
         // Close Blueberry
         if (window.miniAPI) window.miniAPI.quitApp()
@@ -44,18 +68,18 @@ export const MiniApp: React.FC = () => {
 
   const handleExpandToMain = () => {
     if (window.miniAPI) {
-        window.miniAPI.exitMiniMode()
+        window.miniAPI.exitMiniMode(searchUrl)
     }
   }
 
   return (
-    <div className="flex w-full h-[80px] items-center justify-center p-4 bg-transparent app-region-no-drag">
+    <div className="flex flex-col w-full h-screen items-center app-region-no-drag">
       
-      {/* Pill Container */}
-      <form onSubmit={handleSearch} className="flex w-full h-[48px] items-center bg-white/80 dark:bg-black/60 backdrop-blur-xl rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] px-4 app-region-drag border border-gray-100/50 dark:border-white/10">
+      {/* Pill Container (Dock) */}
+      <form onSubmit={handleSearch} className="flex w-[350px] h-[42px] items-center justify-center bg-white dark:bg-black/60 rounded-full px-6 app-region-drag shadow-sm shrink-0">
         
         {/* Blueberry Logo */}
-        <div className="flex items-center justify-center mr-3 w-6 h-6 flex-shrink-0 opacity-80">
+        <div className="flex items-center justify-center mr-3 w-5 h-5 flex-shrink-0 opacity-80">
           <img src="/icon.svg" alt="Logo" className="w-full h-full object-contain pointer-events-none" onError={(e) => {
               (e.target as HTMLImageElement).src = '/icon.png';
           }} />
@@ -68,7 +92,7 @@ export const MiniApp: React.FC = () => {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search or type URL"
-          className="flex-1 bg-transparent border-none outline-none text-base text-gray-800 dark:text-gray-100 placeholder:text-gray-400 app-region-no-drag font-medium"
+          className="flex-1 bg-transparent border-none outline-none text-md text-gray-800 dark:text-gray-100 placeholder:text-gray-400 app-region-no-drag font-medium"
           autoComplete="off"
           spellCheck={false}
         />
@@ -94,6 +118,20 @@ export const MiniApp: React.FC = () => {
         </div>
 
       </form>
+
+      {/* Embedded Webview Result */}
+      {isExpanded && searchUrl && (
+        <div className="w-[750px] flex-1 mt-4 rounded-xl overflow-hidden shadow-2xl border border-gray-200 dark:border-white/10 bg-white">
+          <webview 
+            ref={webviewRef}
+            src={searchUrl} 
+            className="w-full h-[580px]"
+            // @ts-ignore - React doesn't natively type webview completely
+            allowpopups="true"
+          />
+        </div>
+      )}
+
     </div>
   )
 }

@@ -3,7 +3,7 @@ import { electronAPI } from "@electron-toolkit/preload";
 
 const miniAPI = {
   enterMiniMode: () => electronAPI.ipcRenderer.invoke("enter-mini-mode"),
-  exitMiniMode: () => electronAPI.ipcRenderer.invoke("exit-mini-mode"),
+  exitMiniMode: (url?: string) => electronAPI.ipcRenderer.invoke("exit-mini-mode", url),
   quitApp: () => electronAPI.ipcRenderer.invoke("quit-app"),
   search: (url: string) => electronAPI.ipcRenderer.invoke("mini-search", url),
   collapse: () => electronAPI.ipcRenderer.invoke("mini-collapse"),
