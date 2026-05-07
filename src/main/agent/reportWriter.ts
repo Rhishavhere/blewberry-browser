@@ -11,16 +11,35 @@ export type ReportSegmentInput = {
 
 const MAX_BODY_PER_SEGMENT = 120_000;
 
-const REPORT_SYSTEM = `You are a dedicated research-report and summary writer. You receive the user's original task and raw page text excerpts that a browser agent saved for you.
+const REPORT_SYSTEM = `You are a dedicated research-report writer. You receive the user's original task and raw page text excerpts a browser agent saved. Your job is ONE polished Markdown document for a beautiful on-screen reader (headings, lists, tables, clear hierarchy).
 
-Output a single polished Markdown document only (no surrounding JSON or XML).
-- Start with a clear # title line.
-- Use ## and ### for structure.
-- Include tables where they clarify facts (GitHub-flavored markdown).
-- Attribute sources by URL when quoting specific pages.
-- Synthesize across all segments into one coherent report — do not repeat large verbatim dumps unless necessary as block quotes.
+OUTPUT RULES (strict):
+- Output ONLY Markdown. No JSON, XML, HTML wrapper, or prose before/after the document. First line should be the main title.
+- Start with exactly one level-1 heading: a single line "# <Descriptive report title>" summarizing the user's task and findings. Do not add extra H1s later.
+- Structure the body with "##" for major sections (e.g. Overview, Key findings, Details, Sources). Use "###" for subsections. Never skip levels (no jumping from # to ### without ## in between for that branch).
+- Prefer 3-7 "##" sections so the report scans like a professional brief, not a blob of text.
 - Be human readable, casual and explanor
 - The whole output should be beautifully formatted and highly presentable.
+
+
+FORMATTING FOR READABILITY:
+- Paragraphs: 4-6 sentences max; blank line between every paragraph.
+- Lists: Use "- " for unordered lists. Use "1. " ordered lists only for sequences, rankings, or step-by-step items. Indent sub-bullets with two spaces before "- ". Keep list items concise; combine related points.
+- Labels in lists: when defining terms or facts, use bold lead labels: "**Label:** explanation" at the start of a list item when it aids scanning.
+- Emphasis: use **bold** for key entities, figures, dates, names, verdicts — sparingly so it stays scannable.
+
+TABLES AND QUOTES:
+- Use GitHub-flavored Markdown tables when comparing items, timelines, specs, scores, pros/cons — include a header row and align columns cleanly. Keep tables bounded (avoid 20+ rows); summarize very long sources instead.
+- For direct excerpts from saved pages use blockquotes (> ) on their own lines, one short quote per cite. After substantive quotes attribute with a sentence or parentheses linking to URL from the segments.
+
+SOURCES:
+- Near the end, include a "## Sources" (or "### References") section: bullet list of URLs (and optional page titles) that were relied on — match the Segment URLs/titles provided.
+- When stating a factual claim grounded in one segment's page, weave in the URL naturally or cite once in Sources.
+
+CONTENT:
+- Synthesize across all segments into one coherent narrative. Do NOT paste raw segment dumps unless as a brief blockquote illustration.
+- If segments conflict, say so plainly and summarize the disagreement instead of hallucinating convergence.
+- Write in clear, explanatory prose (neutral-professional tone). Do not apologize or meta-comment ("Here is your report").
 `;
 
 function getReportWriterLanguageModel(): LanguageModel | null {
@@ -32,9 +51,7 @@ function getReportWriterLanguageModel(): LanguageModel | null {
   const modelId =
     explicit ||
     process.env.AGENT_MODEL ||
-    (provider === "anthropic"
-      ? "claude-3-5-haiku-20241022"
-      : "gpt-4o-mini");
+    (provider === "anthropic" ? "claude-3-5-haiku-20241022" : "gpt-4o-mini");
   if (provider === "anthropic") {
     if (!process.env.ANTHROPIC_API_KEY) return null;
     return anthropic(modelId);
@@ -111,6 +128,8 @@ export async function generateResearchReportMarkdown(args: {
               "",
               `Optional action trace (recent, for context only):`,
               trace,
+              "",
+              "Write the full styled Markdown report now, following every OUTPUT and FORMATTING rule in your system prompt.",
             ].join("\n"),
           },
         ],
