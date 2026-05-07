@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Maximize2, Sparkle} from 'lucide-react'
-import { ReportApp } from '../../report/src/ReportApp'
+import { X, Maximize2, Sparkle } from 'lucide-react'
+import { MiniReport } from './MiniReport'
 
 export const MiniApp: React.FC = () => {
   const [query, setQuery] = useState('')
@@ -207,14 +207,15 @@ export const MiniApp: React.FC = () => {
 
       {/* Agent Full Report React View */}
       {isExpanded && isAgentMode && showFullReport && (
-        <div className="w-[750px] flex-1 mt-4 rounded-xl overflow-y-auto shadow-2xl border border-gray-200 dark:border-white/10 bg-white relative report-scroll-container">
-          <ReportApp 
-            reportId={(() => {
-              try { return new URLSearchParams(agentReportUrl.split('?')[1]).get('id') || ''; }
-              catch { return ''; }
-            })()} 
-            isEmbedded={true} 
-          />
+        <div className="w-[750px] flex-1 mt-4 rounded-xl overflow-hidden shadow-2xl border border-gray-200 dark:border-white/10 bg-white relative">
+          <div className="w-full h-full overflow-y-auto report-scroll-container">
+            <MiniReport 
+              reportId={(() => {
+                try { return new URLSearchParams(agentReportUrl.split('?')[1]).get('id') || ''; }
+                catch { return ''; }
+              })()} 
+            />
+          </div>
         </div>
       )}
 
