@@ -1,4 +1,5 @@
 import { BaseWindow, shell } from "electron";
+import { join } from "path";
 import { Tab } from "./Tab";
 import { TopBar } from "./TopBar";
 import { SideBar } from "./SideBar";
@@ -11,6 +12,16 @@ export class Window {
   private _topBar: TopBar;
   private _sideBar: SideBar;
 
+  private getWindowIconPath(): string | undefined {
+    // Use ico on Windows; keep undefined on other platforms.
+    if (process.platform !== "win32") {
+      return undefined;
+    }
+    return process.env.NODE_ENV === "development"
+      ? join(process.cwd(), "resources", "icon.ico")
+      : join(process.resourcesPath, "resources", "icon.ico");
+  }
+
   constructor() {
     // Create the browser window.
     this._baseWindow = new BaseWindow({
@@ -21,6 +32,7 @@ export class Window {
       titleBarStyle: "hidden",
       ...(process.platform !== "darwin" ? { titleBarOverlay: true } : {}),
       trafficLightPosition: { x: 15, y: 13 },
+      ...(this.getWindowIconPath() ? { icon: this.getWindowIconPath() } : {}),
     });
 
     this._baseWindow.setMinimumSize(1000, 800);
@@ -49,15 +61,29 @@ export class Window {
       }
     });
 
-    // Handle external link opening
-    this.tabsMap.forEach((tab) => {
-      tab.webContents.setWindowOpenHandler((details) => {
-        shell.openExternal(details.url);
-        return { action: "deny" };
-      });
-    });
-
     this.setupEventListeners();
+  }
+
+  private isHttpUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  private registerTabOpenHandler(tab: Tab): void {
+    tab.webContents.setWindowOpenHandler((details) => {
+      // Keep web popups/new-window links inside Blueberry as tabs.
+      if (this.isHttpUrl(details.url)) {
+        const newTab = this.createTab(details.url);
+        this.switchActiveTab(newTab.id);
+      } else {
+        void shell.openExternal(details.url);
+      }
+      return { action: "deny" };
+    });
   }
 
   private setupEventListeners(): void {
@@ -108,6 +134,7 @@ export class Window {
 
     // Store the tab
     this.tabsMap.set(tabId, tab);
+    this.registerTabOpenHandler(tab);
 
     // If this is the first tab, make it active
     if (this.tabsMap.size === 1) {

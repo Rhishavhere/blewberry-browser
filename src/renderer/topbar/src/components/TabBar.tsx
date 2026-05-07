@@ -75,8 +75,25 @@ const TabItem: React.FC<TabItemProps> = ({
 export const TabBar: React.FC = () => {
     const { tabs, closeTab, switchTab } = useBrowser()
 
+    const isHomeTabUrl = (rawUrl: string): boolean => {
+        try {
+            if (rawUrl.startsWith('file:')) {
+                return /home[\/\\]index\.html/i.test(rawUrl)
+            }
+            const u = new URL(rawUrl)
+            const p = u.pathname.replace(/\/+$/, '') || '/'
+            if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+                return p === '/home'
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
     // Extract favicon from URL (simplified - you might want to improve this)
     const getFavicon = (url: string) => {
+        if (isHomeTabUrl(url)) return '/icon.png'
         try {
             const domain = new URL(url).hostname
             return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`

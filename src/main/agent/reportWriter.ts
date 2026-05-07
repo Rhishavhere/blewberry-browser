@@ -11,7 +11,7 @@ export type ReportSegmentInput = {
 
 const MAX_BODY_PER_SEGMENT = 120_000;
 
-const REPORT_SYSTEM = `You are a dedicated research-report writer. You receive the user's original task and raw page text excerpts that a browser agent saved for you.
+const REPORT_SYSTEM = `You are a dedicated research-report and summary writer. You receive the user's original task and raw page text excerpts that a browser agent saved for you.
 
 Output a single polished Markdown document only (no surrounding JSON or XML).
 - Start with a clear # title line.
@@ -19,7 +19,9 @@ Output a single polished Markdown document only (no surrounding JSON or XML).
 - Include tables where they clarify facts (GitHub-flavored markdown).
 - Attribute sources by URL when quoting specific pages.
 - Synthesize across all segments into one coherent report — do not repeat large verbatim dumps unless necessary as block quotes.
-- Be thorough but professional.`;
+- Be human readable, casual and explanor
+- The whole output should be beautifully formatted and highly presentable.
+`;
 
 function getReportWriterLanguageModel(): LanguageModel | null {
   const explicit = process.env.REPORT_WRITER_MODEL?.trim();

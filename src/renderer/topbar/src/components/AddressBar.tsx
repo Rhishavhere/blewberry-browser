@@ -113,6 +113,7 @@ export const AddressBar: React.FC = () => {
 
     const getFavicon = () => {
         if (!activeTab?.url) return null
+        if (isHomeTab) return '/icon.png'
         try {
             const domain = new URL(activeTab.url).hostname
             return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`

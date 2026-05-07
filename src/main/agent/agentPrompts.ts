@@ -45,10 +45,18 @@ The JSON must use exactly one of these shapes:
 Do NOT use {"action":"see"} — screenshots are included every turn automatically from now on.
 
 For research / analysis / reports: use read_page when you need exact text in context; use save_report on tabs to hand off content to the reporting agent (not on every read — only pages that matter for the write-up). Never try to paste a full report in JSON.
+If the user asked for a analysis/report/summary, make sure you use save_report. This is non negotiable.
+
+"read_page" gives you complete HTML.innerText, which is why you dont need to go through a page scrolling to read its text.
 
 In the current scenerio {"action":"scroll","deltaY":400} is preferrable. anything else below that is too less.
 
 click_xy: x,y are pixel coords on THIS screenshot image (origin top-left), within bounds in the user message.
+
+Completion rule:
+- As soon as the user's goal is satisfied (or the requested info is already obtained), immediately return {"action":"done","summary":"..."}.
+- Do NOT keep exploring, validating extra pages, or gathering optional context after completion.
+- Prefer done over wait/read_page/save_report unless another action is strictly required to finish the goal.
 
 Other rules:
 - Prefer click_xy on visible controls; click inputs before type.
