@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Bot, Bookmark, PanelRight, Search, Trash2 } from "lucide-react";
+import { Bot, Bookmark, Plus, PanelRight, Search, Trash2, X } from "lucide-react";
 import { cn } from "@common/lib/utils";
 import { useDarkMode } from "@common/hooks/useDarkMode";
 
@@ -72,6 +72,11 @@ export const HomeApp: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routinesLoading, setRoutinesLoading] = useState(false);
+  // Create routine form
+  const [showCreate, setShowCreate] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createQuery, setCreateQuery] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const loadRoutines = async () => {
     if (!window.routinesAPI) return;
@@ -91,6 +96,24 @@ export const HomeApp: React.FC = () => {
   const handleDeleteRoutine = async (id: string) => {
     await window.routinesAPI.delete(id);
     setRoutines((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const handleCreateRoutine = async () => {
+    const name = createName.trim();
+    const query = createQuery.trim();
+    if (!name || !query) return;
+    setCreating(true);
+    try {
+      const res = await window.routinesAPI.save(name, query);
+      if (res.ok) {
+        setRoutines((prev) => [...prev, res.routine]);
+        setCreateName("");
+        setCreateQuery("");
+        setShowCreate(false);
+      }
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleUseRoutine = async (routine: Routine) => {
@@ -222,12 +245,79 @@ export const HomeApp: React.FC = () => {
           <div className="flex items-center gap-3 mb-6">
             <Bookmark className="size-5 text-primary" />
             <h1 className="text-xl font-semibold tracking-tight">Saved Routines</h1>
-            <span className="ml-auto text-xs text-muted-foreground">{routines.length} routine{routines.length !== 1 ? "s" : ""}</span>
+            <span className="text-xs text-muted-foreground">{routines.length} routine{routines.length !== 1 ? "s" : ""}</span>
+            <div className="ml-auto">
+              {showCreate ? (
+                <button
+                  type="button"
+                  onClick={() => { setShowCreate(false); setCreateName(""); setCreateQuery(""); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  <X className="size-3.5" /> Cancel
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowCreate(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+                >
+                  <Plus className="size-3.5" /> New Routine
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Create form */}
+          {showCreate && (
+            <div className="mb-5 rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground tracking-wide">New Routine</p>
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Name <span className="font-mono">(used as @name)</span></label>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={createName}
+                    onChange={(e) => setCreateName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && createQuery.trim()) void handleCreateRoutine(); }}
+                    placeholder="e.g. linkedin_update"
+                    className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Task / Query</label>
+                  <textarea
+                    value={createQuery}
+                    onChange={(e) => setCreateQuery(e.target.value)}
+                    placeholder="Describe what the agent should do…"
+                    rows={3}
+                    className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background outline-none focus:ring-1 focus:ring-ring resize-none"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowCreate(false); setCreateName(""); setCreateQuery(""); }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!createName.trim() || !createQuery.trim() || creating}
+                  onClick={() => void handleCreateRoutine()}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
+                >
+                  {creating ? "Saving…" : "Save Routine"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {routinesLoading ? (
             <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Loading…</div>
-          ) : routines.length === 0 ? (
+          ) : routines.length === 0 && !showCreate ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-20">
               <Bookmark className="size-10 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground max-w-xs">
